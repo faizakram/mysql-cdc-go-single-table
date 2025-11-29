@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # MySQL CDC Replication - Complete Documentation
 
 ## Table of Contents
@@ -701,3 +702,6 @@ Developed and tested with MySQL 8.0, compatible with MySQL 5.7+.
 
 **Version**: 1.0.0  
 **Last Updated**: November 2025
+=======
+# mysql-cdc-go-single-table
+>>>>>>> db1a79339a70a5320e483ff7e50d990fac7fe5ef
