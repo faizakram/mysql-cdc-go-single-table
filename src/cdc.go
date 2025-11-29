@@ -193,8 +193,10 @@ func handleRowsEvent(cfg Config, tgtDB *sql.DB, e *replication.RowsEvent, header
 			}
 			if err := applyRowReplace(cfg, tgtDB, cols, row); err != nil {
 				log.Println("Error applying INSERT:", err)
+				globalMetrics.UpdateError(err.Error())
 				return err
 			}
+			globalMetrics.UpdateEventCount("insert")
 		}
 		
 	case replication.UPDATE_ROWS_EVENTv1, replication.UPDATE_ROWS_EVENTv2:
@@ -213,8 +215,10 @@ func handleRowsEvent(cfg Config, tgtDB *sql.DB, e *replication.RowsEvent, header
 			}
 			if err := applyRowUpdate(cfg, tgtDB, cols, pkCol, before, after); err != nil {
 				log.Println("Error applying UPDATE:", err)
+				globalMetrics.UpdateError(err.Error())
 				return err
 			}
+			globalMetrics.UpdateEventCount("update")
 		}
 		
 	case replication.DELETE_ROWS_EVENTv1, replication.DELETE_ROWS_EVENTv2:
@@ -225,8 +229,10 @@ func handleRowsEvent(cfg Config, tgtDB *sql.DB, e *replication.RowsEvent, header
 			}
 			if err := applyRowDelete(cfg, tgtDB, cols, pkCol, row); err != nil {
 				log.Println("Error applying DELETE:", err)
+				globalMetrics.UpdateError(err.Error())
 				return err
 			}
+			globalMetrics.UpdateEventCount("delete")
 		}
 		
 	default:

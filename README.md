@@ -9,9 +9,12 @@
 5. [Configuration](#configuration)
 6. [Quick Start](#quick-start)
 7. [Advanced Usage](#advanced-usage)
-8. [Troubleshooting](#troubleshooting)
-9. [Performance Tuning](#performance-tuning)
-10. [Architecture](#architecture)
+8. [Health Checks & Monitoring](#health-checks--monitoring)
+9. [Troubleshooting](#troubleshooting)
+10. [Performance Tuning](#performance-tuning)
+11. [Architecture](#architecture)
+12. [Testing](#testing)
+13. [CI/CD](#cicd)
 
 ---
 
@@ -34,11 +37,13 @@ This MySQL CDC (Change Data Capture) solution provides real-time replication bet
 - Handles tables with composite primary keys
 - Memory-efficient streaming with configurable batch sizes
 - Automatic retry with exponential backoff
+- Resume from last checkpoint (skips full load if data exists)
 
 ✅ **Real-Time CDC**
 - Binlog-based change capture
 - Support for INSERT, UPDATE, DELETE operations
 - Automatic NULL value handling
+- Real-time metrics and event tracking
 
 ✅ **Charset Conversion**
 - Automatic UTF-32 to UTF-8 conversion
@@ -49,7 +54,18 @@ This MySQL CDC (Change Data Capture) solution provides real-time replication bet
 - Checkpoint-based resume capability
 - Configurable retry logic
 - Docker containerized deployment
-- Easy start/stop management
+- Easy start/stop management with control scripts
+- Built-in health checks and monitoring endpoints
+- Configuration validation on startup
+- Database prerequisite validation
+
+✅ **Monitoring & Observability**
+- HTTP health check endpoint (`/health`)
+- Metrics endpoint with replication stats (`/metrics`)
+- Readiness probe for Kubernetes (`/ready`)
+- Real-time event counters and error tracking
+- Docker health check integration
+- Prometheus-compatible metrics
 
 ---
 
@@ -281,6 +297,74 @@ VALUES ('test_value1', 'test_value2', ...);
 -- Wait 2-3 seconds, then check target
 SELECT * FROM target_db.target_table 
 WHERE column1 = 'test_value1';
+```
+
+---
+
+## Health Checks & Monitoring
+
+### Overview
+
+The CDC application exposes HTTP endpoints for health monitoring and observability. See [HEALTH_MONITORING.md](HEALTH_MONITORING.md) for complete details.
+
+### Quick Reference
+
+**Health Check:**
+```bash
+curl http://localhost:8080/health | jq
+```
+
+**Metrics:**
+```bash
+curl http://localhost:8080/metrics | jq
+```
+
+**Readiness Probe:**
+```bash
+curl http://localhost:8080/ready | jq
+```
+
+### Key Metrics
+
+- `events_processed`: Total CDC events replicated
+- `events_per_second`: Replication throughput
+- `replication_lag_sec`: Current lag behind source
+- `error_count`: Number of errors encountered
+- `inserts_processed`, `updates_processed`, `deletes_processed`: Operation counts
+
+### Docker Health Check
+
+Docker automatically monitors container health:
+
+```bash
+docker ps  # Check STATUS column for "(healthy)"
+docker inspect --format='{{.State.Health.Status}}' mysql-cdc
+```
+
+### Kubernetes Integration
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+```
+
+### Configuration
+
+Set health check port (default: 8080):
+
+```bash
+export HEALTH_PORT=8080
 ```
 
 ---
@@ -688,6 +772,96 @@ docker inspect mysql-cdc > cdc-inspect.txt
 
 ---
 
+## Testing
+
+### Unit Tests
+
+Run unit tests locally (requires Go installed):
+
+```bash
+go test -v ./src/...
+```
+
+Run tests with coverage:
+
+```bash
+go test -v -coverprofile=coverage.out ./src/...
+go tool cover -html=coverage.out
+```
+
+### Integration Testing
+
+Test CDC with sample data:
+
+```sql
+-- 1. Insert test record in source
+INSERT INTO source_db.source_table (id, name, data) 
+VALUES (99999, 'test_record', 'test_data');
+
+-- 2. Wait 2-3 seconds for CDC to replicate
+
+-- 3. Verify in target
+SELECT * FROM target_db.target_table WHERE id = 99999;
+
+-- 4. Test UPDATE
+UPDATE source_db.source_table SET name = 'updated_name' WHERE id = 99999;
+
+-- 5. Test DELETE
+DELETE FROM source_db.source_table WHERE id = 99999;
+```
+
+### Test Coverage
+
+Current test coverage:
+- UTF-32/UTF-16 decoding: ✅ Covered
+- DSN parsing utilities: ✅ Covered
+- Configuration validation: ✅ Covered
+- Metrics tracking: ✅ Integration tested
+- Health endpoints: ✅ Integration tested
+
+---
+
+## CI/CD
+
+### GitHub Actions Workflow
+
+The project includes automated CI/CD pipeline (`.github/workflows/ci.yml`):
+
+**On Pull Request:**
+- ✅ Run unit tests
+- ✅ Lint code with golangci-lint
+- ✅ Build Docker image
+
+**On Push to Main:**
+- ✅ Run all tests
+- ✅ Build and push Docker image to registry
+- ✅ Generate code coverage reports
+
+### Setting Up CI/CD
+
+1. **Add Docker Hub Credentials** (for image publishing):
+   - Go to repository Settings → Secrets
+   - Add `DOCKER_USERNAME` and `DOCKER_PASSWORD`
+
+2. **Enable GitHub Actions**:
+   - Workflows run automatically on push/PR
+
+3. **View Results**:
+   - Check Actions tab in GitHub repository
+   - View test results, coverage, and build status
+
+### Badge Status
+
+Add these badges to your repository:
+
+```markdown
+![CI Status](https://github.com/faizakram/mysql-cdc-go-single-table/workflows/CI%2FCD/badge.svg)
+![Docker Image](https://img.shields.io/docker/v/yourusername/mysql-cdc-go)
+![Go Version](https://img.shields.io/badge/go-1.21-blue)
+```
+
+---
+
 ## License and Credits
 
 This CDC solution is built with:
@@ -698,10 +872,14 @@ This CDC solution is built with:
 
 Developed and tested with MySQL 8.0, compatible with MySQL 5.7+.
 
+### Contributors
+
+- Automated testing and CI/CD pipeline
+- Health monitoring and metrics endpoints
+- Configuration validation
+- Production-ready features
+
 ---
 
 **Version**: 1.0.0  
 **Last Updated**: November 2025
-=======
-# mysql-cdc-go-single-table
->>>>>>> db1a79339a70a5320e483ff7e50d990fac7fe5ef

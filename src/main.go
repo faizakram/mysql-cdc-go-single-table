@@ -10,6 +10,11 @@ func main() {
 	cfg := LoadConfig()
 	log.Printf("Starting mysql-cdc-go single-table for %s.%s -> %s.%s\n", cfg.SrcDB, cfg.SrcTable, cfg.TgtDB, cfg.TargetTable)
 
+	// Validate configuration
+	if err := ValidateConfig(cfg); err != nil {
+		log.Fatalf("Configuration validation failed: %v", err)
+	}
+
 	srcDB, err := OpenDB(cfg.SrcDSN)
 	if err != nil {
 		log.Fatalln("open src db:", err)
@@ -20,6 +25,22 @@ func main() {
 	}
 	defer srcDB.Close()
 	defer tgtDB.Close()
+
+	// Validate source database prerequisites
+	if err := ValidateSourceDatabase(srcDB, cfg); err != nil {
+		log.Fatalf("Source database validation failed: %v", err)
+	}
+
+	// Validate target database prerequisites
+	if err := ValidateTargetDatabase(tgtDB, cfg); err != nil {
+		log.Fatalf("Target database validation failed: %v", err)
+	}
+
+	// Start health check server in background
+	go StartHealthServer(cfg.HealthPort, srcDB, tgtDB, cfg)
+	log.Printf("Health check available at http://localhost:%d/health", cfg.HealthPort)
+	log.Printf("Metrics available at http://localhost:%d/metrics", cfg.HealthPort)
+	log.Printf("Readiness probe at http://localhost:%d/ready", cfg.HealthPort)
 
 	// Check if we can resume from checkpoint (skip full load)
 	var file string
@@ -50,6 +71,7 @@ func main() {
 	}
 
 	// full-load with retries
+	globalMetrics.UpdateStatus("full_load")
 	for attempt := 1; attempt <= cfg.FullloadRetries; attempt++ {
 		log.Printf("Full-load attempt %d/%d\n", attempt, cfg.FullloadRetries)
 		if attempt > 1 && cfg.FullloadDrop {
@@ -87,6 +109,9 @@ StartCDC:
 		log.Fatalln("No binlog position available after full load")
 	}
 	log.Printf("Starting CDC from %s:%d\n", file, pos)
+	
+	globalMetrics.UpdateStatus("cdc_running")
+	globalMetrics.UpdateCheckpoint(fmt.Sprintf("%s:%d", file, pos))
 
 	if err := runCDC(cfg, srcDB, tgtDB, file, pos); err != nil {
 		log.Fatalln("cdc failed:", err)

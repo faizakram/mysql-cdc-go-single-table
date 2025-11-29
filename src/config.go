@@ -22,6 +22,8 @@ type Config struct {
 	CheckpointEvery  int
 	CheckpointPeriod int
 	ServerID         uint32
+	HealthPort       int
+	Workers          int
 }
 
 func LoadConfig() Config {
@@ -70,6 +72,8 @@ func LoadConfig() Config {
 		CheckpointEvery:  toInt("CHECKPOINT_EVERY", 100),
 		CheckpointPeriod: toInt("CHECKPOINT_WRITE_SECONDS", 5),
 		ServerID:         uint32(toInt("BINLOG_SERVER_ID", 9999)),
+		HealthPort:       toInt("HEALTH_PORT", 8080),
+		Workers:          toInt("PARALLEL_WORKERS", 8),
 	}
 	return cfg
 }
