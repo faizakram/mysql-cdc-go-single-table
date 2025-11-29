@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # MySQL CDC Replication - Complete Documentation
 
 ## Table of Contents
