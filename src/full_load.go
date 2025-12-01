@@ -8,6 +8,12 @@ import (
 	"sync"
 )
 
+// batchInsertJob contains everything needed for a batch insert
+type batchInsertJob struct {
+	cols      []string
+	batchRows [][]interface{}
+}
+
 func runFullLoad(cfg Config, srcDB, tgtDB *sql.DB) (string, uint32, error) {
 	key := fmt.Sprintf("%s.%s.%s", cfg.SrcDSN, cfg.SrcDB, cfg.SrcTable)
 	
@@ -346,6 +352,23 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 		return err
 	}
 	
+	// Optimize target database for bulk inserts (disable safety features temporarily)
+	log.Println("Optimizing target database for bulk insert performance...")
+	optimizations := []string{
+		"SET SESSION sql_log_bin = 0",                    // Disable binary logging for this session
+		"SET SESSION unique_checks = 0",                  // Disable unique key checks
+		"SET SESSION foreign_key_checks = 0",             // Disable foreign key checks
+		"SET SESSION autocommit = 0",                     // Manual transaction control
+		"SET SESSION innodb_flush_log_at_trx_commit = 2", // Faster commits (write to log, flush every second)
+	}
+	
+	for _, opt := range optimizations {
+		if _, err := tgtDB.Exec(opt); err != nil {
+			log.Printf("Warning: optimization failed (%s): %v", opt, err)
+			// Continue anyway - these are performance hints, not critical
+		}
+	}
+	
 	// Get primary key columns for ordering (ensures consistent, resumable load)
 	pkCols, err := getPrimaryKeyColumns(srcDB, cfg.SrcDB, cfg.SrcTable)
 	if err != nil || len(pkCols) == 0 {
@@ -372,6 +395,14 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 	
 	totalCount := 0
 	var lastPKValues []interface{} // Cursor position - last primary key values seen
+	var cols []string               // Column names - captured from first query
+	
+	// Use multiple goroutines to parallelize INSERT operations
+	// While one batch is being inserted, the next batch is being fetched
+	const numInserters = 4
+	batchChan := make(chan batchInsertJob, numInserters*2) // Buffer for pipelining
+	errorChan := make(chan error, numInserters)
+	var insertWg sync.WaitGroup
 	
 	for {
 		// Verify database connection is alive before querying
@@ -430,10 +461,29 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 			return fmt.Errorf("query failed at row %d: %v", totalCount, err)
 		}
 
-		cols, err := rows.Columns()
+		colsFromQuery, err := rows.Columns()
 		if err != nil {
 			rows.Close()
 			return err
+		}
+		
+		// First iteration: capture column names and start inserter goroutines
+		if cols == nil {
+			cols = colsFromQuery
+			
+			// Start inserter goroutines now that we have column info
+			for i := 0; i < numInserters; i++ {
+				insertWg.Add(1)
+				go func(workerID int) {
+					defer insertWg.Done()
+					for job := range batchChan {
+						if err := insertBatchJob(tgtDB, cfg, job); err != nil {
+							errorChan <- fmt.Errorf("worker %d: %v", workerID, err)
+							return
+						}
+					}
+				}(i)
+			}
 		}
 
 		// Find indices of primary key columns for cursor tracking
@@ -492,25 +542,29 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 			break
 		}
 
-		// Execute batch insert using extended INSERT syntax (same as parallel load)
-		tx, err := tgtDB.Begin()
-		if err != nil {
-			return fmt.Errorf("begin transaction failed: %v", err)
+		// Send batch to inserter goroutines for parallel processing
+		// Make a copy to avoid data races
+		batchCopy := make([][]interface{}, len(batchRows))
+		copy(batchCopy, batchRows)
+		
+		job := batchInsertJob{
+			cols:      cols,
+			batchRows: batchCopy,
 		}
-
-		if err := executeBatchInsert(tx, cfg, cols, batchRows); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("batch insert failed at row %d: %v", totalCount, err)
-		}
-
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit failed at row %d: %v", totalCount, err)
+		
+		select {
+		case batchChan <- job:
+			// Batch queued successfully
+		case err := <-errorChan:
+			close(batchChan)
+			insertWg.Wait()
+			return fmt.Errorf("insert error at row %d: %v", totalCount, err)
 		}
 
 		totalCount += batchCount
 		
-		// Progress logging every 10K rows
-		if totalCount%10000 == 0 || batchCount < batchSize {
+		// Progress logging every 50K rows (increased for less overhead)
+		if totalCount%50000 == 0 || batchCount < batchSize {
 			log.Printf("Streaming load progress: %d rows loaded\n", totalCount)
 		}
 
@@ -519,7 +573,53 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 			break
 		}
 	}
+	
+	// Close channel and wait for all inserters to finish
+	close(batchChan)
+	insertWg.Wait()
+	
+	// Check for any errors that occurred during insertion
+	select {
+	case err := <-errorChan:
+		return fmt.Errorf("final insert error: %v", err)
+	default:
+		// No errors
+	}
+	
+	// Restore target database settings
+	restoreSettings := []string{
+		"SET SESSION sql_log_bin = 1",
+		"SET SESSION unique_checks = 1",
+		"SET SESSION foreign_key_checks = 1",
+		"SET SESSION autocommit = 1",
+		"SET SESSION innodb_flush_log_at_trx_commit = 1",
+	}
+	
+	for _, cmd := range restoreSettings {
+		if _, err := tgtDB.Exec(cmd); err != nil {
+			log.Printf("Warning: failed to restore setting (%s): %v", cmd, err)
+		}
+	}
 
 	log.Printf("Streaming load completed: %d rows\n", totalCount)
+	return nil
+}
+
+// insertBatchJob handles the actual database insert with proper error handling
+func insertBatchJob(tgtDB *sql.DB, cfg Config, job batchInsertJob) error {
+	tx, err := tgtDB.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction failed: %v", err)
+	}
+
+	if err := executeBatchInsert(tx, cfg, job.cols, job.batchRows); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("batch insert failed: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit failed: %v", err)
+	}
+	
 	return nil
 }

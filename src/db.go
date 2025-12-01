@@ -16,11 +16,11 @@ func OpenDB(dsn string) (*sql.DB, error) {
 		return nil, err
 	}
 	
-	// Configure connection pool for large dataset operations
+	// Configure connection pool for large dataset operations and parallel inserts
 	// These settings prevent connection timeouts during long-running queries
-	db.SetMaxOpenConns(25)                  // Limit concurrent connections
-	db.SetMaxIdleConns(10)                  // Keep connections ready
-	db.SetConnMaxLifetime(10 * time.Minute) // Allow connections to live long enough for large queries
+	db.SetMaxOpenConns(50)                  // Increased for parallel inserters (was 25)
+	db.SetMaxIdleConns(20)                  // Keep more connections ready (was 10)
+	db.SetConnMaxLifetime(15 * time.Minute) // Longer lifetime for bulk operations (was 10min)
 	db.SetConnMaxIdleTime(5 * time.Minute)  // Close idle connections after 5 minutes
 	
 	// Verify connection works
