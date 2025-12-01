@@ -172,8 +172,8 @@ func handleRowsEvent(cfg Config, tgtDB *sql.DB, e *replication.RowsEvent, header
 		return nil
 	}
 	
-	// Get column information from the target table
-	cols, pkCol, err := getTableColumns(tgtDB, cfg.TgtDB, cfg.TargetTable)
+	// Get column information from the target table (including composite PKs)
+	cols, pkCols, err := getTableColumns(tgtDB, cfg.TgtDB, cfg.TargetTable)
 	if err != nil {
 		return fmt.Errorf("failed to get table columns: %v", err)
 	}
@@ -213,7 +213,7 @@ func handleRowsEvent(cfg Config, tgtDB *sql.DB, e *replication.RowsEvent, header
 			if len(before) > numCols {
 				before = before[:numCols]
 			}
-			if err := applyRowUpdate(cfg, tgtDB, cols, pkCol, before, after); err != nil {
+			if err := applyRowUpdate(cfg, tgtDB, cols, pkCols, before, after); err != nil {
 				log.Println("Error applying UPDATE:", err)
 				globalMetrics.UpdateError(err.Error())
 				return err
@@ -227,7 +227,7 @@ func handleRowsEvent(cfg Config, tgtDB *sql.DB, e *replication.RowsEvent, header
 			if len(row) > numCols {
 				row = row[:numCols]
 			}
-			if err := applyRowDelete(cfg, tgtDB, cols, pkCol, row); err != nil {
+			if err := applyRowDelete(cfg, tgtDB, cols, pkCols, row); err != nil {
 				log.Println("Error applying DELETE:", err)
 				globalMetrics.UpdateError(err.Error())
 				return err
@@ -242,11 +242,11 @@ func handleRowsEvent(cfg Config, tgtDB *sql.DB, e *replication.RowsEvent, header
 	return nil
 }
 
-func getTableColumns(db *sql.DB, schema, table string) ([]string, string, error) {
+func getTableColumns(db *sql.DB, schema, table string) ([]string, []string, error) {
 	query := fmt.Sprintf("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s' ORDER BY ORDINAL_POSITION", schema, table)
 	rows, err := db.Query(query)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	defer rows.Close()
 	
@@ -254,22 +254,35 @@ func getTableColumns(db *sql.DB, schema, table string) ([]string, string, error)
 	for rows.Next() {
 		var col string
 		if err := rows.Scan(&col); err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 		cols = append(cols, col)
 	}
 	
-	// Get primary key column
+	// Get ALL primary key columns (supports composite PKs)
 	pkQuery := fmt.Sprintf(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
 		WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s' AND CONSTRAINT_NAME='PRIMARY' 
-		ORDER BY ORDINAL_POSITION LIMIT 1`, schema, table)
-	var pkCol string
-	err = db.QueryRow(pkQuery).Scan(&pkCol)
+		ORDER BY ORDINAL_POSITION`, schema, table)
+	pkRows, err := db.Query(pkQuery)
 	if err != nil {
-		pkCol = cols[0] // Default to first column if no PK found
+		return cols, []string{cols[0]}, nil // Default to first column if no PK found
+	}
+	defer pkRows.Close()
+	
+	var pkCols []string
+	for pkRows.Next() {
+		var pkCol string
+		if err := pkRows.Scan(&pkCol); err != nil {
+			return nil, nil, err
+		}
+		pkCols = append(pkCols, pkCol)
 	}
 	
-	return cols, pkCol, nil
+	if len(pkCols) == 0 {
+		pkCols = []string{cols[0]} // Default to first column if no PK found
+	}
+	
+	return cols, pkCols, nil
 }
 
 func applyRowReplace(cfg Config, tgtDB *sql.DB, cols []string, row []interface{}) error {
@@ -324,7 +337,7 @@ func applyRowReplace(cfg Config, tgtDB *sql.DB, cols []string, row []interface{}
 	return err
 }
 
-func applyRowUpdate(cfg Config, tgtDB *sql.DB, cols []string, pkCol string, before, after []interface{}) error {
+func applyRowUpdate(cfg Config, tgtDB *sql.DB, cols []string, pkCols []string, before, after []interface{}) error {
 	// Build UPDATE statement with actual column names
 	var sets []string
 	var vals []interface{}
@@ -376,78 +389,103 @@ func applyRowUpdate(cfg Config, tgtDB *sql.DB, cols []string, pkCol string, befo
 		}
 	}
 	
-	// Add WHERE clause based on primary key from before values
-	pkIdx := -1
-	for i, col := range cols {
-		if col == pkCol {
-			pkIdx = i
-			break
+	// Build WHERE clause for ALL primary key columns (supports composite PKs)
+	var whereClauses []string
+	for _, pkCol := range pkCols {
+		pkIdx := -1
+		for i, col := range cols {
+			if col == pkCol {
+				pkIdx = i
+				break
+			}
+		}
+		
+		if pkIdx >= 0 && pkIdx < len(before) {
+			whereClauses = append(whereClauses, fmt.Sprintf("`%s`=?", pkCol))
+			vals = append(vals, convertValue(before[pkIdx]))
 		}
 	}
 	
-	if pkIdx >= 0 && pkIdx < len(before) {
-		vals = append(vals, convertValue(before[pkIdx]))
-	} else {
-		vals = append(vals, convertValue(before[0])) // Fallback to first column
+	// Fallback if no PK columns found
+	if len(whereClauses) == 0 {
+		whereClauses = append(whereClauses, "`"+cols[0]+"`=?")
+		vals = append(vals, convertValue(before[0]))
 	}
 	
-	query := fmt.Sprintf("UPDATE `%s`.`%s` SET %s WHERE `%s`=?", 
-		cfg.TgtDB, cfg.TargetTable, strings.Join(sets, ","), pkCol)
+	query := fmt.Sprintf("UPDATE `%s`.`%s` SET %s WHERE %s", 
+		cfg.TgtDB, cfg.TargetTable, strings.Join(sets, ","), strings.Join(whereClauses, " AND "))
 	_, err := tgtDB.Exec(query, vals...)
 	return err
 }
 
-func applyRowDelete(cfg Config, tgtDB *sql.DB, cols []string, pkCol string, row []interface{}) error {
-	// Build DELETE statement using primary key
-	pkIdx := -1
-	for i, col := range cols {
-		if col == pkCol {
-			pkIdx = i
-			break
-		}
-	}
-	
-	var pkVal interface{}
-	if pkIdx >= 0 && pkIdx < len(row) {
-		pkVal = row[pkIdx]
-	} else {
-		pkVal = row[0] // Fallback to first column
-	}
-	
-	// Convert value with proper charset handling - SAME LOGIC AS INSERT
-	if pkVal != nil {
-		if bytes, ok := pkVal.([]byte); ok {
+func applyRowDelete(cfg Config, tgtDB *sql.DB, cols []string, pkCols []string, row []interface{}) error {
+	// Convert values with proper charset handling - SAME LOGIC AS INSERT
+	convertValue := func(val interface{}) interface{} {
+		if val == nil {
+			return nil
+		} else if bytes, ok := val.([]byte); ok {
 			if len(bytes) == 0 {
-				pkVal = nil // Empty byte array -> NULL
-			} else {
-				// Decode UTF-32/UTF-16 bytes to UTF-8 string
-				pkVal = decodeString(bytes)
+				return nil // Empty byte array -> NULL (prevents "Data too long" errors)
 			}
-		} else if str, ok := pkVal.(string); ok {
+			// Decode UTF-32/UTF-16 bytes to UTF-8 string
+			decoded := decodeString(bytes)
+			return decoded
+		} else if str, ok := val.(string); ok {
 			if str == "" {
-				pkVal = nil // Empty string -> NULL
-			} else {
-				// Check if this string contains UTF-32 encoded data
-				strBytes := []byte(str)
-				if len(strBytes)%4 == 0 && len(strBytes) >= 16 {
-					// Count null bytes
-					nullCount := 0
-					for _, b := range strBytes {
-						if b == 0 {
-							nullCount++
-						}
-					}
-					// If > 25% null bytes, likely UTF-32
-					if nullCount > len(strBytes)/4 {
-						pkVal = decodeString(strBytes)
+				return nil // Empty string -> NULL (prevents "Data too long" errors)
+			}
+			// Check if this string contains UTF-32 encoded data
+			// UTF-32 has many null bytes (3 out of every 4 bytes for ASCII chars)
+			strBytes := []byte(str)
+			if len(strBytes)%4 == 0 && len(strBytes) >= 16 {
+				// Count null bytes
+				nullCount := 0
+				for _, b := range strBytes {
+					if b == 0 {
+						nullCount++
 					}
 				}
+				// If > 25% null bytes, likely UTF-32
+				if nullCount > len(strBytes)/4 {
+					decoded := decodeString(strBytes)
+					return decoded
+				} else {
+					return str
+				}
+			} else {
+				return str
 			}
+		}
+		return val
+	}
+	
+	// Build WHERE clause for ALL primary key columns (supports composite PKs)
+	var whereClauses []string
+	var pkVals []interface{}
+	
+	for _, pkCol := range pkCols {
+		pkIdx := -1
+		for i, col := range cols {
+			if col == pkCol {
+				pkIdx = i
+				break
+			}
+		}
+		
+		if pkIdx >= 0 && pkIdx < len(row) {
+			whereClauses = append(whereClauses, fmt.Sprintf("`%s`=?", pkCol))
+			pkVals = append(pkVals, convertValue(row[pkIdx]))
 		}
 	}
 	
-	query := fmt.Sprintf("DELETE FROM `%s`.`%s` WHERE `%s`=?", 
-		cfg.TgtDB, cfg.TargetTable, pkCol)
-	_, err := tgtDB.Exec(query, pkVal)
+	// Fallback if no PK columns found
+	if len(whereClauses) == 0 {
+		whereClauses = append(whereClauses, "`"+cols[0]+"`=?")
+		pkVals = append(pkVals, convertValue(row[0]))
+	}
+	
+	query := fmt.Sprintf("DELETE FROM `%s`.`%s` WHERE %s", 
+		cfg.TgtDB, cfg.TargetTable, strings.Join(whereClauses, " AND "))
+	_, err := tgtDB.Exec(query, pkVals...)
 	return err
 }
