@@ -53,11 +53,12 @@ func LoadConfig() Config {
 	cfg := Config{
 		// For large datasets (20-30M rows), append connection params for optimization:
 		// ?maxAllowedPacket=67108864 (64MB) - allows larger batch inserts
-		// &writeTimeout=30s - prevents timeout on large writes
-		// &readTimeout=30s - prevents timeout on large reads
+		// &writeTimeout=300s - prevents timeout on large writes (5 minutes)
+		// &readTimeout=300s - prevents timeout on large reads (5 minutes)
+		// &timeout=60s - connection timeout (1 minute)
 		// &charset=utf8mb4 - ensures proper charset conversion for utf32 tables
-		SrcDSN:           p("SRC_DSN", "root:rootpass@tcp(source-host:3306)/?maxAllowedPacket=67108864&readTimeout=30s&charset=utf8mb4"),
-		TgtDSN:           p("TGT_DSN", "root:rootpass@tcp(target-host:3306)/?maxAllowedPacket=67108864&writeTimeout=30s&charset=utf8mb4"),
+		SrcDSN:           p("SRC_DSN", "root:rootpass@tcp(source-host:3306)/?maxAllowedPacket=67108864&readTimeout=300s&writeTimeout=300s&timeout=60s&charset=utf8mb4"),
+		TgtDSN:           p("TGT_DSN", "root:rootpass@tcp(target-host:3306)/?maxAllowedPacket=67108864&writeTimeout=300s&readTimeout=300s&timeout=60s&charset=utf8mb4"),
 		SrcDB:            p("SRC_DB", "offercraft"),
 		TgtDB:            p("TGT_DB", "offercraft"),
 		SrcTable:         p("SRC_TABLE", "channel_transactions"),

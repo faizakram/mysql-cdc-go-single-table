@@ -42,9 +42,9 @@ if [ "$1" = "--dry-run" ]; then
     exit 0
 fi
 
-# Build DSN strings
-SRC_DSN="${SRC_USER}:${SRC_PASS}@tcp(${SRC_HOST}:${SRC_PORT})/?maxAllowedPacket=67108864&readTimeout=30s"
-TGT_DSN="${TGT_USER}:${TGT_PASS}@tcp(${TGT_HOST}:${TGT_PORT})/?maxAllowedPacket=67108864&writeTimeout=30s"
+# Build DSN strings with extended timeouts for large datasets
+SRC_DSN="${SRC_USER}:${SRC_PASS}@tcp(${SRC_HOST}:${SRC_PORT})/?maxAllowedPacket=67108864&timeout=60s&readTimeout=300s&writeTimeout=300s"
+TGT_DSN="${TGT_USER}:${TGT_PASS}@tcp(${TGT_HOST}:${TGT_PORT})/?maxAllowedPacket=67108864&timeout=60s&readTimeout=300s&writeTimeout=300s"
 
 echo "╔═══════════════════════════════════════════════════════════╗"
 echo "║         MySQL CDC - External Database Runner            ║"
