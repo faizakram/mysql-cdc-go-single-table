@@ -107,11 +107,12 @@ func runFullLoad(cfg Config, srcDB, tgtDB *sql.DB) (string, uint32, error) {
 	if err != nil {
 		return "", 0, err
 	}
-	// write checkpoint to target DB
-	if err := EnsureCheckpointTable(tgtDB, cfg.CheckpointTable); err != nil {
+	// write checkpoint to target DB - use fully qualified table name
+	checkpointTable := fmt.Sprintf("`%s`.`%s`", cfg.TgtDB, cfg.CheckpointTable)
+	if err := EnsureCheckpointTable(tgtDB, checkpointTable); err != nil {
 		return "", 0, err
 	}
-	if err := WriteCheckpoint(tgtDB, cfg.CheckpointTable, key, file, pos); err != nil {
+	if err := WriteCheckpoint(tgtDB, checkpointTable, key, file, pos); err != nil {
 		return "", 0, err
 	}
 	log.Printf("Wrote checkpoint %s:%d\n", file, pos)
@@ -355,11 +356,10 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 	// Optimize target database for bulk inserts (disable safety features temporarily)
 	log.Println("Optimizing target database for bulk insert performance...")
 	optimizations := []string{
-		"SET SESSION sql_log_bin = 0",                    // Disable binary logging for this session
-		"SET SESSION unique_checks = 0",                  // Disable unique key checks
-		"SET SESSION foreign_key_checks = 0",             // Disable foreign key checks
-		"SET SESSION autocommit = 0",                     // Manual transaction control
-		"SET SESSION innodb_flush_log_at_trx_commit = 2", // Faster commits (write to log, flush every second)
+		"SET SESSION sql_log_bin = 0",         // Disable binary logging for this session
+		"SET SESSION unique_checks = 0",       // Disable unique key checks
+		"SET SESSION foreign_key_checks = 0",  // Disable foreign key checks
+		"SET SESSION autocommit = 0",          // Manual transaction control
 	}
 	
 	for _, opt := range optimizations {
@@ -586,13 +586,17 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 		// No errors
 	}
 	
+	// Ensure we're still using the target database before restoring settings
+	if _, err := tgtDB.Exec(fmt.Sprintf("USE `%s`", cfg.TgtDB)); err != nil {
+		log.Printf("Warning: failed to select database before restore: %v", err)
+	}
+	
 	// Restore target database settings
 	restoreSettings := []string{
 		"SET SESSION sql_log_bin = 1",
 		"SET SESSION unique_checks = 1",
 		"SET SESSION foreign_key_checks = 1",
 		"SET SESSION autocommit = 1",
-		"SET SESSION innodb_flush_log_at_trx_commit = 1",
 	}
 	
 	for _, cmd := range restoreSettings {
