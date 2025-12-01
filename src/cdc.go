@@ -75,8 +75,9 @@ func decodeString(b []byte) string {
 }
 
 func runCDC(cfg Config, srcDB, tgtDB *sql.DB, startFile string, startPos uint32) error {
-	// prepare checkpoint table
-	if err := EnsureCheckpointTable(tgtDB, cfg.CheckpointTable); err != nil {
+	// prepare checkpoint table with fully qualified name (database.table)
+	checkpointTable := fmt.Sprintf("`%s`.`%s`", cfg.TgtDB, cfg.CheckpointTable)
+	if err := EnsureCheckpointTable(tgtDB, checkpointTable); err != nil {
 		return err
 	}
 
@@ -111,7 +112,7 @@ func runCDC(cfg Config, srcDB, tgtDB *sql.DB, startFile string, startPos uint32)
 		case <-sigs:
 			log.Println("Shutdown signal received, exiting CDC")
 			// final checkpoint
-			if err := WriteCheckpoint(tgtDB, cfg.CheckpointTable, keyFor(cfg), startFile, startPos); err != nil {
+			if err := WriteCheckpoint(tgtDB, checkpointTable, keyFor(cfg), startFile, startPos); err != nil {
 				log.Println("Error writing final checkpoint:", err)
 			}
 			return nil
@@ -156,7 +157,7 @@ func runCDC(cfg Config, srcDB, tgtDB *sql.DB, startFile string, startPos uint32)
 				// periodic checkpoint write using last known file/pos from syncer
 				file, pos, err := getSourceMasterStatus(srcDB)
 				if err == nil {
-					if err := WriteCheckpoint(tgtDB, cfg.CheckpointTable, keyFor(cfg), file, pos); err != nil {
+					if err := WriteCheckpoint(tgtDB, checkpointTable, keyFor(cfg), file, pos); err != nil {
 						log.Println("checkpoint write failed:", err)
 					}
 				}
