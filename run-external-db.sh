@@ -24,8 +24,8 @@ TGT_DATABASE="guardian"
 TGT_TABLE="channel_txn_temp"
 
 # CDC Configuration
-PARALLEL_WORKERS="8"        # Number of parallel workers (increase for faster load)
-BATCH_SIZE="10000"         # Rows per batch (increase for better throughput)
+PARALLEL_WORKERS="8"        # Only used for single integer PK tables (not your case)
+BATCH_SIZE="20000"         # Rows per batch - INCREASE THIS for 15M records (10K→20K = 2x faster)
 SERVER_ID="9999"           # Unique binlog server ID
 CHECKPOINT_TABLE="_cdc_checkpoint"
 CHECKPOINT_INTERVAL="10"   # Checkpoint write interval in seconds
