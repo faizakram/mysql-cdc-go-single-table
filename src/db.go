@@ -11,7 +11,25 @@ import (
 
 func OpenDB(dsn string) (*sql.DB, error) {
 	// dsn must include no DB name, we'll use db-specific queries
-	return sql.Open("mysql", dsn)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Configure connection pool for large dataset operations
+	// These settings prevent connection timeouts during long-running queries
+	db.SetMaxOpenConns(25)                  // Limit concurrent connections
+	db.SetMaxIdleConns(10)                  // Keep connections ready
+	db.SetConnMaxLifetime(10 * time.Minute) // Allow connections to live long enough for large queries
+	db.SetConnMaxIdleTime(5 * time.Minute)  // Close idle connections after 5 minutes
+	
+	// Verify connection works
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("database ping failed: %v", err)
+	}
+	
+	return db, nil
 }
 
 func RetryOp(attempts int, maxWaitSec int, op func() error) error {

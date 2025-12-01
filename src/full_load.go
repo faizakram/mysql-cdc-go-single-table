@@ -374,12 +374,23 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 	offset := 0
 	
 	for {
+		// Verify database connection is alive before querying
+		// This prevents "invalid connection" errors on stale connections
+		if err := srcDB.Ping(); err != nil {
+			log.Printf("Warning: source database connection lost, reconnecting...")
+			return fmt.Errorf("connection lost at offset %d: %v", offset, err)
+		}
+		
 		// Query with ORDER BY and LIMIT for consistent, resumable batches
 		query := fmt.Sprintf("SELECT * FROM `%s`.`%s` ORDER BY %s LIMIT %d OFFSET %d", 
 			cfg.SrcDB, cfg.SrcTable, orderBy, batchSize, offset)
 		
 		rows, err := srcDB.Query(query)
 		if err != nil {
+			// Check if it's a connection error and provide better error message
+			if err.Error() == "invalid connection" {
+				return fmt.Errorf("query failed at offset %d: connection timeout (query took >300s, consider reducing BATCH_SIZE or adding indexes)", offset)
+			}
 			return fmt.Errorf("query failed at offset %d: %v", offset, err)
 		}
 
