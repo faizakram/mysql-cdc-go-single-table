@@ -329,13 +329,42 @@ func applyRowUpdate(cfg Config, tgtDB *sql.DB, cols []string, pkCol string, befo
 	var sets []string
 	var vals []interface{}
 	
-	// Convert values with proper charset handling
+	// Convert values with proper charset handling - SAME LOGIC AS INSERT
 	convertValue := func(val interface{}) interface{} {
 		if val == nil {
 			return nil
 		} else if bytes, ok := val.([]byte); ok {
+			if len(bytes) == 0 {
+				return nil // Empty byte array -> NULL (prevents "Data too long" errors)
+			}
 			// Decode UTF-32/UTF-16 bytes to UTF-8 string
-			return decodeString(bytes)
+			decoded := decodeString(bytes)
+			return decoded
+		} else if str, ok := val.(string); ok {
+			if str == "" {
+				return nil // Empty string -> NULL (prevents "Data too long" errors)
+			}
+			// Check if this string contains UTF-32 encoded data
+			// UTF-32 has many null bytes (3 out of every 4 bytes for ASCII chars)
+			strBytes := []byte(str)
+			if len(strBytes)%4 == 0 && len(strBytes) >= 16 {
+				// Count null bytes
+				nullCount := 0
+				for _, b := range strBytes {
+					if b == 0 {
+						nullCount++
+					}
+				}
+				// If > 25% null bytes, likely UTF-32
+				if nullCount > len(strBytes)/4 {
+					decoded := decodeString(strBytes)
+					return decoded
+				} else {
+					return str
+				}
+			} else {
+				return str
+			}
 		}
 		return val
 	}
@@ -385,11 +414,35 @@ func applyRowDelete(cfg Config, tgtDB *sql.DB, cols []string, pkCol string, row 
 		pkVal = row[0] // Fallback to first column
 	}
 	
-	// Convert value with proper charset handling
+	// Convert value with proper charset handling - SAME LOGIC AS INSERT
 	if pkVal != nil {
 		if bytes, ok := pkVal.([]byte); ok {
-			// Decode UTF-32/UTF-16 bytes to UTF-8 string
-			pkVal = decodeString(bytes)
+			if len(bytes) == 0 {
+				pkVal = nil // Empty byte array -> NULL
+			} else {
+				// Decode UTF-32/UTF-16 bytes to UTF-8 string
+				pkVal = decodeString(bytes)
+			}
+		} else if str, ok := pkVal.(string); ok {
+			if str == "" {
+				pkVal = nil // Empty string -> NULL
+			} else {
+				// Check if this string contains UTF-32 encoded data
+				strBytes := []byte(str)
+				if len(strBytes)%4 == 0 && len(strBytes) >= 16 {
+					// Count null bytes
+					nullCount := 0
+					for _, b := range strBytes {
+						if b == 0 {
+							nullCount++
+						}
+					}
+					// If > 25% null bytes, likely UTF-32
+					if nullCount > len(strBytes)/4 {
+						pkVal = decodeString(strBytes)
+					}
+				}
+			}
 		}
 	}
 	

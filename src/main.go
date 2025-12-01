@@ -45,6 +45,8 @@ func main() {
 	// Check if we can resume from checkpoint (skip full load)
 	var file string
 	var pos uint32
+	var fullLoadStartFile string
+	var fullLoadStartPos uint32
 	
 	checkpointTable := fmt.Sprintf("`%s`.`%s`", cfg.TgtDB, cfg.CheckpointTable)
 	if err = EnsureCheckpointTable(tgtDB, checkpointTable); err != nil {
@@ -72,6 +74,19 @@ func main() {
 
 	// full-load with retries
 	globalMetrics.UpdateStatus("full_load")
+	
+	// CRITICAL: Get binlog position BEFORE starting full load
+	// This ensures we can capture changes that happen DURING the full load
+	if file == "" || pos == 0 {
+		log.Println("Capturing current binlog position before full load...")
+		fullLoadStartFile, fullLoadStartPos, err = getSourceMasterStatus(srcDB)
+		if err != nil {
+			log.Fatalln("Failed to get binlog position before full load:", err)
+		}
+		log.Printf("Full load will use binlog position: %s:%d (changes after this will be captured by CDC)\n", 
+			fullLoadStartFile, fullLoadStartPos)
+	}
+	
 	for attempt := 1; attempt <= cfg.FullloadRetries; attempt++ {
 		log.Printf("Full-load attempt %d/%d\n", attempt, cfg.FullloadRetries)
 		if attempt > 1 && cfg.FullloadDrop {
@@ -82,6 +97,18 @@ func main() {
 		}
 		file, pos, err = runFullLoad(cfg, srcDB, tgtDB)
 		if err == nil {
+			// Full load completed successfully
+			// If we captured binlog position before full load, use it for CDC
+			// This ensures we don't miss changes that happened during full load
+			if fullLoadStartFile != "" && fullLoadStartPos > 0 {
+				log.Printf("Full load complete. Using pre-captured binlog position %s:%d for CDC\n", 
+					fullLoadStartFile, fullLoadStartPos)
+				log.Println("This ensures changes during full load are replayed by CDC")
+				file = fullLoadStartFile
+				pos = fullLoadStartPos
+			} else {
+				log.Printf("Full load complete. Using binlog position from full load: %s:%d\n", file, pos)
+			}
 			break
 		}
 		log.Println("Full-load attempt failed:", err)
