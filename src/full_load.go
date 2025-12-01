@@ -368,36 +368,89 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 		batchSize = 1000
 	}
 	
-	log.Printf("Starting streaming load with batch size: %d\n", batchSize)
+	log.Printf("Starting cursor-based streaming load (optimized for large tables) with batch size: %d\n", batchSize)
 	
 	totalCount := 0
-	offset := 0
+	var lastPKValues []interface{} // Cursor position - last primary key values seen
 	
 	for {
 		// Verify database connection is alive before querying
 		// This prevents "invalid connection" errors on stale connections
 		if err := srcDB.Ping(); err != nil {
 			log.Printf("Warning: source database connection lost, reconnecting...")
-			return fmt.Errorf("connection lost at offset %d: %v", offset, err)
+			return fmt.Errorf("connection lost at row %d: %v", totalCount, err)
 		}
 		
-		// Query with ORDER BY and LIMIT for consistent, resumable batches
-		query := fmt.Sprintf("SELECT * FROM `%s`.`%s` ORDER BY %s LIMIT %d OFFSET %d", 
-			cfg.SrcDB, cfg.SrcTable, orderBy, batchSize, offset)
+		// Build WHERE clause for cursor-based pagination (much faster than OFFSET)
+		// This uses the primary key as a cursor to fetch the next batch
+		var query string
+		if lastPKValues == nil {
+			// First batch - no WHERE clause needed
+			query = fmt.Sprintf("SELECT * FROM `%s`.`%s` ORDER BY %s LIMIT %d", 
+				cfg.SrcDB, cfg.SrcTable, orderBy, batchSize)
+		} else {
+			// Subsequent batches - use WHERE clause with last PK values as cursor
+			// For composite PKs: WHERE (pk1, pk2, ...) > (last_pk1, last_pk2, ...)
+			whereCols := "("
+			for i, pk := range pkCols {
+				if i > 0 {
+					whereCols += ", "
+				}
+				whereCols += fmt.Sprintf("`%s`", pk)
+			}
+			whereCols += ")"
+			
+			wherePlaceholders := "("
+			for i := range pkCols {
+				if i > 0 {
+					wherePlaceholders += ", "
+				}
+				wherePlaceholders += "?"
+			}
+			wherePlaceholders += ")"
+			
+			query = fmt.Sprintf("SELECT * FROM `%s`.`%s` WHERE %s > %s ORDER BY %s LIMIT %d", 
+				cfg.SrcDB, cfg.SrcTable, whereCols, wherePlaceholders, orderBy, batchSize)
+		}
 		
-		rows, err := srcDB.Query(query)
+		var rows *sql.Rows
+		var err error
+		
+		if lastPKValues == nil {
+			rows, err = srcDB.Query(query)
+		} else {
+			rows, err = srcDB.Query(query, lastPKValues...)
+		}
+		
 		if err != nil {
 			// Check if it's a connection error and provide better error message
 			if err.Error() == "invalid connection" {
-				return fmt.Errorf("query failed at offset %d: connection timeout (query took >300s, consider reducing BATCH_SIZE or adding indexes)", offset)
+				return fmt.Errorf("query failed at row %d: connection timeout (query took >300s, consider reducing BATCH_SIZE or adding indexes)", totalCount)
 			}
-			return fmt.Errorf("query failed at offset %d: %v", offset, err)
+			return fmt.Errorf("query failed at row %d: %v", totalCount, err)
 		}
 
 		cols, err := rows.Columns()
 		if err != nil {
 			rows.Close()
 			return err
+		}
+
+		// Find indices of primary key columns for cursor tracking
+		pkIndices := make([]int, len(pkCols))
+		for i, pkCol := range pkCols {
+			found := false
+			for j, col := range cols {
+				if col == pkCol {
+					pkIndices[i] = j
+					found = true
+					break
+				}
+			}
+			if !found {
+				rows.Close()
+				return fmt.Errorf("primary key column %s not found in result set", pkCol)
+			}
 		}
 
 		// Collect batch rows
@@ -412,7 +465,7 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 		for rows.Next() {
 			if err := rows.Scan(scanArgs...); err != nil {
 				rows.Close()
-				return fmt.Errorf("scan failed at offset %d: %v", offset, err)
+				return fmt.Errorf("scan failed at row %d: %v", totalCount, err)
 			}
 
 			args := make([]interface{}, len(values))
@@ -423,6 +476,13 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 					args[i] = string(v)
 				}
 			}
+			
+			// Update cursor to last row's PK values
+			lastPKValues = make([]interface{}, len(pkCols))
+			for i, pkIdx := range pkIndices {
+				lastPKValues[i] = args[pkIdx]
+			}
+			
 			batchRows = append(batchRows, args)
 			batchCount++
 		}
@@ -440,15 +500,14 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 
 		if err := executeBatchInsert(tx, cfg, cols, batchRows); err != nil {
 			tx.Rollback()
-			return fmt.Errorf("batch insert failed at offset %d: %v", offset, err)
+			return fmt.Errorf("batch insert failed at row %d: %v", totalCount, err)
 		}
 
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit failed at offset %d: %v", offset, err)
+			return fmt.Errorf("commit failed at row %d: %v", totalCount, err)
 		}
 
 		totalCount += batchCount
-		offset += batchCount
 		
 		// Progress logging every 10K rows
 		if totalCount%10000 == 0 || batchCount < batchSize {
