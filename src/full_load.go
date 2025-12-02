@@ -123,8 +123,9 @@ func captureMasterStatus(cfg Config, srcDB *sql.DB) (string, uint32, error) {
 	row := srcDB.QueryRow("SHOW MASTER STATUS")
 	var file string
 	var pos uint32
-	// other fields omitted
-	if err := row.Scan(&file, &pos, new(interface{}), new(interface{}), new(interface{})); err != nil {
+	var binlogDoDB, binlogIgnoreDB, executedGtidSet sql.NullString
+	// SHOW MASTER STATUS returns 5 columns: File, Position, Binlog_Do_DB, Binlog_Ignore_DB, Executed_Gtid_Set
+	if err := row.Scan(&file, &pos, &binlogDoDB, &binlogIgnoreDB, &executedGtidSet); err != nil {
 		return "", 0, err
 	}
 	return file, pos, nil
