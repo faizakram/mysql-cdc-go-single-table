@@ -164,12 +164,31 @@ func extractPassFromDSN(dsn string) string {
 }
 
 func getSourceMasterStatus(db *sql.DB) (string, uint32, error) {
+	// First, check MySQL version to determine how many columns SHOW MASTER STATUS returns
+	var version string
+	err := db.QueryRow("SELECT VERSION()").Scan(&version)
+	if err != nil {
+		log.Printf("Warning: Could not detect MySQL version: %v", err)
+	}
+	log.Printf("DEBUG: MySQL version: %s", version)
+	
 	row := db.QueryRow("SHOW MASTER STATUS")
 	var file string
 	var pos uint32
+	
+	// MySQL 5.7+ returns 5 columns, older versions return 4
+	// Try 5 columns first (MySQL 5.7+, 8.0+)
 	var binlogDoDB, binlogIgnoreDB, executedGtidSet sql.NullString
-	log.Println("DEBUG: Scanning SHOW MASTER STATUS with 5 columns")
-	if err := row.Scan(&file, &pos, &binlogDoDB, &binlogIgnoreDB, &executedGtidSet); err != nil {
+	log.Println("DEBUG: Attempting to scan SHOW MASTER STATUS with 5 columns")
+	err = row.Scan(&file, &pos, &binlogDoDB, &binlogIgnoreDB, &executedGtidSet)
+	if err != nil && strings.Contains(err.Error(), "expected 4 destination arguments") {
+		// Fallback to 4 columns for older MySQL versions (5.6 or earlier)
+		log.Println("DEBUG: Retrying with 4 columns for older MySQL version")
+		row = db.QueryRow("SHOW MASTER STATUS")
+		err = row.Scan(&file, &pos, &binlogDoDB, &binlogIgnoreDB)
+	}
+	
+	if err != nil {
 		log.Printf("DEBUG: Scan failed with error: %v", err)
 		return "", 0, err
 	}
