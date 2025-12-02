@@ -176,14 +176,14 @@ func getSourceMasterStatus(db *sql.DB) (string, uint32, error) {
 	var file string
 	var pos uint32
 	
-	// MySQL 5.7+ returns 5 columns, older versions return 4
+	// MySQL 5.7+ returns 5 columns, older versions and MariaDB 10.3 return 4
 	// Try 5 columns first (MySQL 5.7+, 8.0+)
 	var binlogDoDB, binlogIgnoreDB, executedGtidSet sql.NullString
 	log.Println("DEBUG: Attempting to scan SHOW MASTER STATUS with 5 columns")
 	err = row.Scan(&file, &pos, &binlogDoDB, &binlogIgnoreDB, &executedGtidSet)
 	if err != nil && strings.Contains(err.Error(), "expected 4 destination arguments") {
-		// Fallback to 4 columns for older MySQL versions (5.6 or earlier)
-		log.Println("DEBUG: Retrying with 4 columns for older MySQL version")
+		// Fallback to 4 columns for MySQL 5.6/older 5.7/MariaDB 10.3
+		log.Println("DEBUG: Retrying with 4 columns for MySQL 5.6/older 5.7/MariaDB 10.3")
 		row = db.QueryRow("SHOW MASTER STATUS")
 		err = row.Scan(&file, &pos, &binlogDoDB, &binlogIgnoreDB)
 	}
