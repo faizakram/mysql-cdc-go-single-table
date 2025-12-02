@@ -1,16 +1,16 @@
 FROM golang:1.21-alpine AS builder
 WORKDIR /build
-
-# Build argument to bust cache when needed
-ARG CACHEBUST=1
-
 COPY go.mod ./
-COPY ./src ./src
 RUN apk add --no-cache git
 RUN go env -w GOPROXY=https://proxy.golang.org
+
+# Build argument to bust cache - placed right before COPY to invalidate subsequent layers
+ARG CACHEBUST=1
+RUN echo "Cache bust: $CACHEBUST"
+
+COPY ./src ./src
 RUN go mod tidy
 RUN go mod download
-
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /usr/local/bin/mysql-cdc ./src
 
 FROM alpine:3.18
