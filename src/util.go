@@ -167,7 +167,9 @@ func getSourceMasterStatus(db *sql.DB) (string, uint32, error) {
 	var file string
 	var pos uint32
 	var binlogDoDB, binlogIgnoreDB, executedGtidSet sql.NullString
+	log.Println("DEBUG: Scanning SHOW MASTER STATUS with 5 columns")
 	if err := row.Scan(&file, &pos, &binlogDoDB, &binlogIgnoreDB, &executedGtidSet); err != nil {
+		log.Printf("DEBUG: Scan failed with error: %v", err)
 		return "", 0, err
 	}
 	return file, pos, nil
