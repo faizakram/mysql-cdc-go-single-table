@@ -464,9 +464,12 @@ func streamingLoad(cfg Config, srcDB, tgtDB *sql.DB) error {
 		}
 		
 		if err != nil {
-			// Check if it's a connection error and provide better error message
-			if err.Error() == "invalid connection" {
-				return fmt.Errorf("query failed at row %d: connection timeout (query took >300s, consider reducing BATCH_SIZE or adding indexes)", totalCount)
+			// Check if it's a connection/timeout error and provide better error message
+			errStr := err.Error()
+			if errStr == "invalid connection" || 
+			   strings.Contains(errStr, "i/o timeout") || 
+			   strings.Contains(errStr, "timeout") {
+				return fmt.Errorf("query failed at row %d: connection timeout (query took too long, BATCH_SIZE=%d may be too large for your database)", totalCount, cfg.BatchSize)
 			}
 			return fmt.Errorf("query failed at row %d: %v", totalCount, err)
 		}
