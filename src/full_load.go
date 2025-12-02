@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -128,7 +129,7 @@ func captureMasterStatus(cfg Config, srcDB *sql.DB) (string, uint32, error) {
 	var binlogDoDB, binlogIgnoreDB, executedGtidSet sql.NullString
 	err := row.Scan(&file, &pos, &binlogDoDB, &binlogIgnoreDB, &executedGtidSet)
 	if err != nil && strings.Contains(err.Error(), "expected 4 destination arguments") {
-		// Fallback to 4 columns for older MySQL versions
+		// Fallback to 4 columns for MySQL 5.6/older 5.7/MariaDB 10.3
 		row = srcDB.QueryRow("SHOW MASTER STATUS")
 		err = row.Scan(&file, &pos, &binlogDoDB, &binlogIgnoreDB)
 	}
