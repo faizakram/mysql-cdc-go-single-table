@@ -53,18 +53,18 @@ func LoadConfig() Config {
 	cfg := Config{
 		// For large datasets (20-30M rows), append connection params for optimization:
 		// ?maxAllowedPacket=67108864 (64MB) - allows larger batch inserts
-		// &writeTimeout=300s - prevents timeout on large writes (5 minutes)
-		// &readTimeout=300s - prevents timeout on large reads (5 minutes)
+		// &writeTimeout=3600s - prevents timeout on large writes (1 hour for slow MariaDB)
+		// &readTimeout=3600s - prevents timeout on large reads (1 hour for slow MariaDB)
 		// &timeout=60s - connection timeout (1 minute)
 		// &charset=utf8mb4 - ensures proper charset conversion for utf32 tables
-		SrcDSN:           p("SRC_DSN", "root:rootpass@tcp(source-host:3306)/?maxAllowedPacket=67108864&readTimeout=300s&writeTimeout=300s&timeout=60s&charset=utf8mb4"),
-		TgtDSN:           p("TGT_DSN", "root:rootpass@tcp(target-host:3306)/?maxAllowedPacket=67108864&writeTimeout=300s&readTimeout=300s&timeout=60s&charset=utf8mb4"),
+		SrcDSN:           p("SRC_DSN", "root:rootpass@tcp(source-host:3306)/?maxAllowedPacket=67108864&readTimeout=3600s&writeTimeout=3600s&timeout=60s&charset=utf8mb4"),
+		TgtDSN:           p("TGT_DSN", "root:rootpass@tcp(target-host:3306)/?maxAllowedPacket=67108864&writeTimeout=3600s&readTimeout=3600s&timeout=60s&charset=utf8mb4"),
 		SrcDB:            p("SRC_DB", "offercraft"),
 		TgtDB:            p("TGT_DB", "offercraft"),
 		SrcTable:         p("SRC_TABLE", "channel_transactions"),
 		TargetTable:      p("TARGET_TABLE", "channel_transactions_temp"),
 		ParallelWorkers:  toInt("PARALLEL_WORKERS", 8),  // Increased for large datasets
-		BatchSize:        toInt("BATCH_SIZE", 10000),    // Larger batches for better throughput
+		BatchSize:        toInt("BATCH_SIZE", 50000),    // Large batches for throughput (30min timeout)
 		DBRetryAttempts:  toInt("DB_RETRY_ATTEMPTS", 5),
 		DBRetryMaxWait:   toInt("DB_RETRY_MAX_WAIT", 10),
 		FullloadRetries:  toInt("FULLLOAD_MAX_RETRIES", 3),

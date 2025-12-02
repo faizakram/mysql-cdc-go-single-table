@@ -25,7 +25,7 @@ TGT_TABLE="channel_txn_temp"
 
 # CDC Configuration
 PARALLEL_WORKERS="8"        # Only used for single integer PK tables (not your case)
-BATCH_SIZE="50000"         # INCREASED: 50K rows per batch for maximum throughput
+BATCH_SIZE="50000"         # 50K rows per batch (30min timeout allows this)
 SERVER_ID="9999"           # Unique binlog server ID
 CHECKPOINT_TABLE="_cdc_checkpoint"
 CHECKPOINT_INTERVAL="10"   # Checkpoint write interval in seconds
@@ -42,9 +42,9 @@ if [ "$1" = "--dry-run" ]; then
     exit 0
 fi
 
-# Build DSN strings with extended timeouts for large datasets
-SRC_DSN="${SRC_USER}:${SRC_PASS}@tcp(${SRC_HOST}:${SRC_PORT})/?maxAllowedPacket=67108864&timeout=60s&readTimeout=300s&writeTimeout=300s"
-TGT_DSN="${TGT_USER}:${TGT_PASS}@tcp(${TGT_HOST}:${TGT_PORT})/?maxAllowedPacket=67108864&timeout=60s&readTimeout=300s&writeTimeout=300s"
+# Build DSN strings with extended timeouts for large datasets (1 hour for slow MariaDB)
+SRC_DSN="${SRC_USER}:${SRC_PASS}@tcp(${SRC_HOST}:${SRC_PORT})/?maxAllowedPacket=67108864&timeout=60s&readTimeout=3600s&writeTimeout=3600s"
+TGT_DSN="${TGT_USER}:${TGT_PASS}@tcp(${TGT_HOST}:${TGT_PORT})/?maxAllowedPacket=67108864&timeout=60s&readTimeout=3600s&writeTimeout=3600s"
 
 echo "╔═══════════════════════════════════════════════════════════╗"
 echo "║         MySQL CDC - External Database Runner            ║"
