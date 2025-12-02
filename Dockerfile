@@ -11,7 +11,9 @@ RUN echo "Cache bust: $CACHEBUST"
 COPY ./src ./src
 RUN go mod tidy
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /usr/local/bin/mysql-cdc ./src
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-X 'main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" \
+    -o /usr/local/bin/mysql-cdc ./src
 
 FROM alpine:3.18
 RUN apk add --no-cache tzdata ca-certificates

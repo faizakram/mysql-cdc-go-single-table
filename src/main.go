@@ -6,9 +6,13 @@ import (
 	"time"
 )
 
+// Build information - updated on each build
+var BuildTime = "unknown"
+
 func main() {
 	cfg := LoadConfig()
 	log.Printf("Starting mysql-cdc-go single-table for %s.%s -> %s.%s\n", cfg.SrcDB, cfg.SrcTable, cfg.TgtDB, cfg.TargetTable)
+	log.Printf("Build time: %s (with 5-column SHOW MASTER STATUS fix)", BuildTime)
 
 	// Validate configuration
 	if err := ValidateConfig(cfg); err != nil {
