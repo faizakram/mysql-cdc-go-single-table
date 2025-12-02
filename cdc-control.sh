@@ -48,12 +48,14 @@ container_running() {
 # Function to build the image
 build_image() {
     log_info "Building Docker image..."
-    if docker build -q -t "$IMAGE_NAME" . > /dev/null 2>&1; then
+    # Use timestamp as build arg to bust cache and ensure latest code
+    CACHEBUST=$(date +%s)
+    if docker build --build-arg CACHEBUST=$CACHEBUST -q -t "$IMAGE_NAME" . > /dev/null 2>&1; then
         log_success "Docker image built successfully"
         return 0
     else
         log_error "Failed to build Docker image"
-        docker build -t "$IMAGE_NAME" .
+        docker build --build-arg CACHEBUST=$CACHEBUST -t "$IMAGE_NAME" .
         return 1
     fi
 }

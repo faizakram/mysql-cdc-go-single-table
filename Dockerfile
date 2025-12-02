@@ -1,13 +1,15 @@
 FROM golang:1.21-alpine AS builder
 WORKDIR /build
+
+# Build argument to bust cache when needed
+ARG CACHEBUST=1
+
 COPY go.mod ./
+COPY ./src ./src
 RUN apk add --no-cache git
 RUN go env -w GOPROXY=https://proxy.golang.org
 RUN go mod tidy
 RUN go mod download
-
-# Copy source files (separate step to bust cache when code changes)
-COPY ./src ./src
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /usr/local/bin/mysql-cdc ./src
 
