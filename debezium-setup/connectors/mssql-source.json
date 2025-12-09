@@ -4,11 +4,11 @@
     "connector.class": "io.debezium.connector.sqlserver.SqlServerConnector",
     "tasks.max": "10",
     
-    "database.hostname": "YOUR_MSSQL_HOST",
+    "database.hostname": "localhost",
     "database.port": "1433",
-    "database.user": "sa",
-    "database.password": "YOUR_PASSWORD",
-    "database.names": "YOUR_DATABASE_NAME",
+    "database.user": "SA",
+    "database.password": "YourStrong!Passw0rd",
+    "database.names": "mig_test_db",
     "database.encrypt": "false",
     
     "topic.prefix": "mssql",
