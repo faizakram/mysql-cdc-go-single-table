@@ -17,8 +17,7 @@
     "transforms.route.replacement": "$1",
     
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
-    "transforms.unwrap.drop.tombstones": "false",
-    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "transforms.unwrap.delete.tombstone.handling.mode": "none",
     
     "transforms.snakeCaseKey.type": "com.debezium.transforms.SnakeCaseTransform$Key",
     "transforms.snakeCaseValue.type": "com.debezium.transforms.SnakeCaseTransform$Value",
