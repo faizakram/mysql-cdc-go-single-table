@@ -1,29 +1,26 @@
 {
   "name": "postgres-sink-connector",
   "config": {
-    "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+    "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
     "tasks.max": "10",
     
-    "connection.url": "jdbc:postgresql://localhost:5432/target_db",
-    "connection.user": "admin",
+    "connection.url": "jdbc:postgresql://postgres18:5432/target_db?currentSchema=dbo",
+    "connection.username": "admin",
     "connection.password": "admin123",
     
-    "topics.regex": ".*",
+    "topics.regex": "mssql\\.mig_test_db\\.dbo\\.(.*)",
     
-    "auto.create": "true",
-    "auto.evolve": "true",
+    "transforms": "route",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "mssql\\.mig_test_db\\.dbo\\.(.*)",
+    "transforms.route.replacement": "$1",
     
+    "table.name.format": "dbo.${topic}",
     "insert.mode": "upsert",
-    "pk.mode": "record_key",
     "delete.enabled": "true",
+    "primary.key.mode": "record_key",
     
-    "batch.size": 3000,
-    "max.retries": 10,
-    "retry.backoff.ms": 3000,
-    
-    "transforms": "unwrap",
-    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
-    "transforms.unwrap.drop.tombstones": "false",
-    "transforms.unwrap.delete.handling.mode": "rewrite"
+    "schema.evolution": "basic",
+    "quote.identifiers": "true"
   }
 }

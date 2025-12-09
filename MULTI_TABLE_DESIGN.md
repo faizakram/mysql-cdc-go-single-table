@@ -1,9 +1,16 @@
 # Multi-Table & Heterogeneous Database Support Design
 
+## ACTUAL REQUIREMENT (Updated)
+- **Source**: MS SQL Server (500 tables)
+- **Target**: PostgreSQL
+- **Migration Type**: HETEROGENEOUS (requires type mapping, syntax conversion)
+- **Scale**: 500 tables × unknown row count
+
 ## Current Limitations
 - **Single table**: One source table → One target table
 - **Homogeneous**: MariaDB → MySQL only
-- **Time**: 15M rows taking ~42 minutes (good for single table, but for 50+ tables?)
+- **Not designed for**: MS SQL Server → PostgreSQL
+- **Time**: 15M rows taking ~42 minutes (good for single table, but for 500 tables?)
 
 ## Use Cases to Support
 
