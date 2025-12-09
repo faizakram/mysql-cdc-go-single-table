@@ -4,7 +4,7 @@
     "connector.class": "io.debezium.connector.sqlserver.SqlServerConnector",
     "tasks.max": "10",
     
-    "database.hostname": "localhost",
+    "database.hostname": "mssql-test",
     "database.port": "1433",
     "database.user": "SA",
     "database.password": "YourStrong!Passw0rd",
@@ -14,8 +14,8 @@
     "topic.prefix": "mssql",
     "table.include.list": "dbo.*",
     
-    "database.history.kafka.bootstrap.servers": "kafka:9092",
-    "database.history.kafka.topic": "schema-changes.mssql",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
+    "schema.history.internal.kafka.topic": "schema-changes.mssql",
     
     "snapshot.mode": "initial",
     "snapshot.isolation.mode": "read_committed",

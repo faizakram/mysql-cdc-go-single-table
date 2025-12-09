@@ -89,32 +89,6 @@ services:
     networks:
       - debezium-network
 
-  # ==============================================
-  # PostgreSQL Sink (Optional - for local testing)
-  # Remove this if using external PostgreSQL
-  # ==============================================
-  postgres-target:
-    image: postgres:15
-    container_name: postgres-target
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: target_db
-    ports:
-      - "5432:5432"
-    networks:
-      - debezium-network
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    command:
-      - "postgres"
-      - "-c"
-      - "max_connections=1000"
-      - "-c"
-      - "shared_buffers=2GB"
-      - "-c"
-      - "work_mem=50MB"
-
 networks:
   debezium-network:
     driver: bridge
@@ -124,4 +98,3 @@ volumes:
   zookeeper-logs:
   kafka-data:
   debezium-data:
-  postgres-data:

@@ -43,7 +43,7 @@ wait_for_service() {
 
 # Step 1: Start all services
 echo -e "${YELLOW}Step 1: Starting Kafka, Zookeeper, and Debezium...${NC}"
-docker-compose up -d
+docker compose up -d
 
 # Step 2: Wait for services to be ready
 wait_for_service "http://localhost:9092" "Kafka"
