@@ -1,0 +1,31 @@
+{
+  "name": "mssql-source-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.sqlserver.SqlServerConnector",
+    "tasks.max": "10",
+    
+    "database.hostname": "YOUR_MSSQL_HOST",
+    "database.port": "1433",
+    "database.user": "sa",
+    "database.password": "YOUR_PASSWORD",
+    "database.names": "YOUR_DATABASE_NAME",
+    "database.encrypt": "false",
+    
+    "topic.prefix": "mssql",
+    "table.include.list": "dbo.*",
+    
+    "database.history.kafka.bootstrap.servers": "kafka:9092",
+    "database.history.kafka.topic": "schema-changes.mssql",
+    
+    "snapshot.mode": "initial",
+    "snapshot.isolation.mode": "read_committed",
+    
+    "decimal.handling.mode": "precise",
+    "time.precision.mode": "adaptive_time_microseconds",
+    
+    "transforms": "route",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "([^.]+)\\.([^.]+)\\.([^.]+)",
+    "transforms.route.replacement": "$3"
+  }
+}
