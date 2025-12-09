@@ -7,10 +7,11 @@ Complete guide for real-time Change Data Capture (CDC) replication from MS SQL S
 ## Table of Contents
 1. [Architecture Overview](#architecture-overview)
 2. [Prerequisites](#prerequisites)
-3. [Step-by-Step Setup](#step-by-step-setup)
-4. [Monitoring & Verification](#monitoring--verification)
-5. [Troubleshooting](#troubleshooting)
-6. [Scaling to 500 Tables](#scaling-to-500-tables)
+3. [Naming Convention Transformation](#naming-convention-transformation)
+4. [Step-by-Step Setup](#step-by-step-setup)
+5. [Monitoring & Verification](#monitoring--verification)
+6. [Troubleshooting](#troubleshooting)
+7. [Scaling to 500 Tables](#scaling-to-500-tables)
 
 ---
 
@@ -56,8 +57,10 @@ Complete guide for real-time Change Data Capture (CDC) replication from MS SQL S
 - ✅ Full initial snapshot (historical data)
 - ✅ Real-time CDC for INSERT, UPDATE, DELETE
 - ✅ Auto-table creation in PostgreSQL
+- ✅ **PascalCase to snake_case transformation** (MS SQL → PostgreSQL naming standards)
 - ✅ Schema evolution support
 - ✅ Sub-second replication latency
+- ✅ Soft delete support with audit trail
 
 ---
 
@@ -208,6 +211,124 @@ telnet postgres-host 5432
 docker network ls
 docker network inspect debezium-network
 ```
+
+---
+
+## Naming Convention Transformation
+
+### Overview
+
+This solution automatically transforms MS SQL Server's **PascalCase/camelCase** naming to PostgreSQL's **snake_case** standard:
+
+**MS SQL Server:**
+```sql
+-- Tables: EmployeeData, OrderHistory, UserSettings
+-- Columns: EmployeeID, FirstName, LastName, CreatedAt
+```
+
+**PostgreSQL (Transformed):**
+```sql
+-- Tables: employee_data, order_history, user_settings
+-- Columns: employee_id, first_name, last_name, created_at
+```
+
+### How It Works
+
+**Custom Kafka Connect Single Message Transform (SMT)**
+
+The solution includes a custom Java SMT (`SnakeCaseTransform`) that:
+
+1. **Transforms Topic Names** → Table names (e.g., `EmployeeData` → `employee_data`)
+2. **Transforms Field Names** → Column names (e.g., `FirstName` → `first_name`)
+3. **Handles Nested Structures** → Recursively transforms all nested fields
+4. **Preserves Data Integrity** → Maintains all data types and constraints
+
+**Transformation Rules:**
+- `EmployeeID` → `employee_id` (handles acronyms)
+- `firstName` → `first_name` (camelCase)
+- `HTTPSConnection` → `https_connection` (multiple capitals)
+- `userName123` → `user_name123` (with numbers)
+
+### Custom SMT Components
+
+**Files:**
+- `custom-smt/pom.xml` - Maven build configuration
+- `custom-smt/src/main/java/com/debezium/transforms/SnakeCaseTransform.java` - Transform implementation
+- `deploy-smt.sh` - Automated build and deployment script
+
+**Build & Deploy:**
+```bash
+cd debezium-setup
+./deploy-smt.sh
+```
+
+This automatically:
+1. Compiles the Java SMT using Maven
+2. Creates an uber JAR with all dependencies
+3. Copies JAR to Debezium Connect container
+4. Restarts Debezium Connect to load the plugin
+
+### Configuration
+
+The SMT is configured in `connectors/postgres-sink.json`:
+
+```json
+{
+  "transforms": "route,unwrap,snakeCaseKey,snakeCaseValue",
+  
+  "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+  "transforms.unwrap.drop.tombstones": "false",
+  "transforms.unwrap.delete.handling.mode": "rewrite",
+  
+  "transforms.snakeCaseKey.type": "com.debezium.transforms.SnakeCaseTransform$Key",
+  "transforms.snakeCaseValue.type": "com.debezium.transforms.SnakeCaseTransform$Value"
+}
+```
+
+**Transform Chain:**
+1. **RegexRouter** - Simplifies topic names (removes database prefix)
+2. **ExtractNewRecordState** - Unwraps Debezium envelope, extracts `after` state
+3. **SnakeCaseTransform$Key** - Transforms key field names
+4. **SnakeCaseTransform$Value** - Transforms value field names
+
+### Verification
+
+**Check Table Names:**
+```sql
+SELECT table_name 
+FROM information_schema.tables 
+WHERE table_schema = 'dbo' 
+ORDER BY table_name;
+
+-- Expected: employees, order_history, user_settings (all lowercase)
+```
+
+**Check Column Names:**
+```sql
+SELECT column_name 
+FROM information_schema.columns 
+WHERE table_schema = 'dbo' 
+  AND table_name = 'employees' 
+ORDER BY ordinal_position;
+
+-- Expected: employee_id, first_name, last_name (snake_case)
+```
+
+**Query Without Quotes:**
+```sql
+-- Works without quotes (PostgreSQL convention)
+SELECT employee_id, first_name, last_name 
+FROM dbo.employees 
+WHERE employee_id > 1000;
+```
+
+### Benefits
+
+✅ **Consistency** - All tables follow PostgreSQL naming conventions  
+✅ **Maintainability** - No manual schema mappings required  
+✅ **Scalability** - Works automatically for all 500 tables  
+✅ **No Code Changes** - Application queries work naturally with snake_case  
+✅ **CDC Compatible** - Transformations applied in real-time for all operations
 
 ---
 
