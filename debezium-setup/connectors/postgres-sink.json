@@ -10,14 +10,17 @@
     
     "topics.regex": "mssql\\.mig_test_db\\.dbo\\.(.*)",
     
-    "transforms": "route,unwrap,snakeCaseKey,snakeCaseValue",
+    "transforms": "route,unwrap,renameDeleted,snakeCaseKey,snakeCaseValue",
     
     "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
     "transforms.route.regex": "mssql\\.mig_test_db\\.dbo\\.(.*)",
     "transforms.route.replacement": "$1",
     
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
-    "transforms.unwrap.delete.tombstone.handling.mode": "none",
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    
+    "transforms.renameDeleted.type": "org.apache.kafka.connect.transforms.ReplaceField$Value",
+    "transforms.renameDeleted.renames": "__deleted:__cdc_deleted",
     
     "transforms.snakeCaseKey.type": "com.debezium.transforms.SnakeCaseTransform$Key",
     "transforms.snakeCaseValue.type": "com.debezium.transforms.SnakeCaseTransform$Value",

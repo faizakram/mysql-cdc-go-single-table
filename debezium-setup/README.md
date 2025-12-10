@@ -20,7 +20,7 @@ Complete guide for real-time Change Data Capture (CDC) replication from MS SQL S
 ```
 ┌─────────────────────┐
 │  MS SQL Server      │
-│  (Source: 500 tables)│
+│ (Source: 500 tables)│
 │  - CDC Enabled      │
 │  - SQL Agent Running│
 └──────────┬──────────┘
@@ -47,7 +47,7 @@ Complete guide for real-time Change Data Capture (CDC) replication from MS SQL S
            ↓
 ┌─────────────────────┐
 │  PostgreSQL         │
-│  (Target: 500 tables)│
+│ (Target: 500 tables)│
 │  - Auto-created     │
 │  - Real-time sync   │
 └─────────────────────┘
