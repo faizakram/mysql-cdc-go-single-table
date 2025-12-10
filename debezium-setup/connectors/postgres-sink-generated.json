@@ -1,4 +1,4 @@
-{
+                                                                                                    {
   "name": "postgres-sink-connector",
   "config": {
     "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",

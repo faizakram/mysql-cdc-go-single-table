@@ -10,7 +10,7 @@
     
     "topics.regex": "mssql\\.mig_test_db\\.dbo\\.(.*)",
     
-    "transforms": "route,unwrap,renameDeleted,snakeCaseKey,snakeCaseValue",
+    "transforms": "route,unwrap,renameDeleted,snakeCaseKey,snakeCaseValue,typeConversion",
     
     "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
     "transforms.route.regex": "mssql\\.mig_test_db\\.dbo\\.(.*)",
@@ -24,6 +24,10 @@
     
     "transforms.snakeCaseKey.type": "com.debezium.transforms.SnakeCaseTransform$Key",
     "transforms.snakeCaseValue.type": "com.debezium.transforms.SnakeCaseTransform$Value",
+    
+    "transforms.typeConversion.type": "com.debezium.transforms.TypeConversionTransform",
+    "transforms.typeConversion.uuid.columns": "user_id,session_id,transaction_id,last_login_id,unique_identifier_col",
+    "transforms.typeConversion.json.columns": "user_preferences,api_response,metadata,settings",
     
     "table.name.format": "dbo.${topic}",
     "insert.mode": "upsert",

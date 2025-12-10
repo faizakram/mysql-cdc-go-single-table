@@ -1,23 +1,30 @@
-# Complete Setup Guide: MS SQL to PostgreSQL CDC with Snake Case Transformation
+# Complete Setup Guide: MS SQL to PostgreSQL CDC with Automatic Schema Replication
 
-This guide will walk you through setting up Change Data Capture (CDC) from MS SQL Server to PostgreSQL with automatic snake_case transformation for any number of tables.
+This guide provides **step-by-step instructions** for setting up **fully automatic** Change Data Capture (CDC) from MS SQL Server to PostgreSQL with:
+- ✅ **Automatic schema replication** (no manual table creation!)
+- ✅ **VARCHAR length preservation** (VARCHAR(50) stays VARCHAR(50))
+- ✅ **Native UUID type conversion**
+- ✅ **Snake_case transformation** for all column names
+- ✅ **Cross-platform support** (Linux, Windows, macOS)
 
 ---
 
-## Table of Contents
+## 📋 Table of Contents
 1. [Overview](#overview)
 2. [Prerequisites](#prerequisites)
 3. [Step 1: Install Prerequisites](#step-1-install-prerequisites)
 4. [Step 2: Clone and Setup Project](#step-2-clone-and-setup-project)
 5. [Step 3: Start Infrastructure](#step-3-start-infrastructure)
 6. [Step 4: Setup Source Database (MS SQL)](#step-4-setup-source-database-ms-sql)
-7. [Step 5: Setup Target Database (PostgreSQL)](#step-5-setup-target-database-postgresql)
-8. [Step 6: Build and Deploy Custom Transform](#step-6-build-and-deploy-custom-transform)
-9. [Step 7: Deploy Connectors](#step-7-deploy-connectors)
-10. [Step 8: Test the Setup](#step-8-test-the-setup)
-11. [Step 9: Add More Tables](#step-9-add-more-tables)
-12. [Troubleshooting](#troubleshooting)
-13. [Monitoring](#monitoring)
+7. [Step 5: Configure Credentials](#step-5-configure-credentials)
+8. [Step 6: Run Automatic Schema Replication](#step-6-run-automatic-schema-replication)
+9. [Step 7: Build and Deploy Custom Transform](#step-7-build-and-deploy-custom-transform)
+10. [Step 8: Deploy CDC Connectors](#step-8-deploy-cdc-connectors)
+11. [Step 9: Test the Setup](#step-9-test-the-setup)
+12. [Step 10: Add More Tables](#step-10-add-more-tables)
+13. [Troubleshooting](#troubleshooting)
+14. [Monitoring](#monitoring)
+15. [Production Deployment](#production-deployment)
 
 ---
 

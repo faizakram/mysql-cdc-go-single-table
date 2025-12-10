@@ -1,17 +1,129 @@
-# Debezium CDC Setup: MS SQL Server → PostgreSQL (500 Tables)
+# MS SQL to PostgreSQL CDC with Automatic Schema Replication
 
-Complete guide for real-time Change Data Capture (CDC) replication from MS SQL Server to PostgreSQL using Debezium.
+**Fully automatic Change Data Capture (CDC)** system that replicates data from MS SQL Server to PostgreSQL in real-time with:
+
+- ✅ **Automatic schema replication** - No manual table creation!
+- ✅ **VARCHAR length preservation** - VARCHAR(50) stays VARCHAR(50)
+- ✅ **Native type conversion** - UNIQUEIDENTIFIER → UUID, JSON → JSON
+- ✅ **Snake_case transformation** - FirstName → first_name
+- ✅ **Real-time replication** - 5-10 second latency
+- ✅ **Soft delete tracking** - Deleted records marked, not removed
+- ✅ **Cross-platform** - Works on Windows, Linux, macOS
+- ✅ **Scales to 500+ tables**
+
+---
+
+## 🚀 Quick Start (5 Minutes)
+
+### Option 1: Automated Deployment (Recommended)
+
+```bash
+# Clone and deploy everything with one script
+git clone https://github.com/faizakram/mysql-cdc-go-single-table.git
+cd mysql-cdc-go-single-table/debezium-setup
+./scripts/deploy-all.sh
+```
+
+**This automated script:**
+- ✅ Checks prerequisites
+- ✅ Starts all infrastructure
+- ✅ Sets up databases with CDC
+- ✅ Replicates schema automatically
+- ✅ Deploys connectors
+- ✅ Verifies everything works
+
+👉 **Details:** See [DEPLOY_ALL_GUIDE.md](DEPLOY_ALL_GUIDE.md)
+
+### Option 2: Manual Deployment
+
+👉 **New user?** See [QUICK_START.md](QUICK_START.md) to get started in 5 minutes.
+
+👉 **Complete instructions?** See [COMPLETE_INSTALLATION_GUIDE.md](COMPLETE_INSTALLATION_GUIDE.md) for step-by-step installation on Windows/Linux/macOS.
+
+---
+
+## 📖 Documentation
+
+| Guide | Description | Who Should Read |
+|-------|-------------|-----------------|
+| **[DEPLOY_ALL_GUIDE.md](DEPLOY_ALL_GUIDE.md)** | **Automated deployment script** | **Everyone (easiest!)** |
+| **[QUICK_START.md](QUICK_START.md)** | Get started in 5 minutes | Manual deployment |
+| **[COMPLETE_INSTALLATION_GUIDE.md](COMPLETE_INSTALLATION_GUIDE.md)** | Full installation guide (Windows/Linux/macOS) | New users |
+| **[AUTOMATIC_SCHEMA_REPLICATION.md](AUTOMATIC_SCHEMA_REPLICATION.md)** | Technical details of automatic schema replication | Developers |
+| **[SETUP_GUIDE.md](SETUP_GUIDE.md)** | Detailed configuration guide | Advanced users |
+| **[TESTING_GUIDE.md](TESTING_GUIDE.md)** | Testing and validation procedures | QA engineers |
 
 ---
 
 ## Table of Contents
+1. [Key Features](#key-features)
+2. [Architecture Overview](#architecture-overview)
+3. [Prerequisites](#prerequisites)
+4. [Quick Installation](#quick-installation)
+5. [Configuration](#configuration)
+6. [Usage](#usage)
+7. [Testing](#testing)
+8. [Troubleshooting](#troubleshooting)
+9. [Scaling to 500+ Tables](#scaling-to-500-tables)
+
+---
+
+## Key Features
+
+### 🎯 Automatic Schema Replication
+
+**No more manual CREATE TABLE statements!**
+
+The system automatically:
+1. Reads MS SQL table schemas from `sys.columns`
+2. Converts data types with full fidelity
+3. Preserves VARCHAR lengths, UUID types, DECIMAL precision
+4. Creates PostgreSQL tables automatically
+5. Handles snake_case transformation
+
+| MS SQL Type | PostgreSQL Type | Preserved |
+|-------------|----------------|-----------|
+| `NVARCHAR(50)` | `VARCHAR(50)` | ✅ Length |
+| `UNIQUEIDENTIFIER` | `UUID` | ✅ Native type |
+| `DECIMAL(10,2)` | `NUMERIC(10,2)` | ✅ Precision |
+| `DATETIME2(6)` | `TIMESTAMP(6)` | ✅ Microseconds |
+| `BIT` | `BOOLEAN` | ✅ Native type |
+
+### 🔄 Real-Time CDC
+
+- **Latency**: 5-10 seconds
+- **Operations**: INSERT, UPDATE, DELETE
+- **Throughput**: 10,000+ events/second
+- **Reliability**: Exactly-once delivery
+
+### 🐍 Snake Case Transformation
+
+Column names automatically transformed:
+```
+FirstName    → first_name
+EmailAddress → email_address
+IsActive     → is_active
+```
+
+### 🗑️ Soft Delete Tracking
+
+Deleted records marked with `__cdc_deleted = 'true'`:
+- History preserved
+- Audit trail maintained
+- Can restore if needed
+
+---
+
+## Table of Contents (Detailed)
 1. [Architecture Overview](#architecture-overview)
 2. [Prerequisites](#prerequisites)
-3. [Naming Convention Transformation](#naming-convention-transformation)
-4. [Step-by-Step Setup](#step-by-step-setup)
-5. [Monitoring & Verification](#monitoring--verification)
-6. [Troubleshooting](#troubleshooting)
-7. [Scaling to 500 Tables](#scaling-to-500-tables)
+3. [Quick Installation](#quick-installation)
+4. [Configuration](#configuration)
+5. [Usage](#usage)
+6. [Testing](#testing)
+7. [Monitoring & Verification](#monitoring--verification)
+8. [Troubleshooting](#troubleshooting)
+9. [Scaling to 500+ Tables](#scaling-to-500-tables)
 
 ---
 

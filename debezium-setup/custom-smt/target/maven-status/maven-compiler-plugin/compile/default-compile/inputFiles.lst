@@ -1,1 +1,2 @@
 /home/faizakram/Downloads/mysql-cdc-go-single-table/debezium-setup/custom-smt/src/main/java/com/debezium/transforms/SnakeCaseTransform.java
+/home/faizakram/Downloads/mysql-cdc-go-single-table/debezium-setup/custom-smt/src/main/java/com/debezium/transforms/TypeConversionTransform.java
