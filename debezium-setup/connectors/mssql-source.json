@@ -7,7 +7,7 @@
     "database.hostname": "mssql-test",
     "database.port": "1433",
     "database.user": "SA",
-    "database.password": "YourStrong!Passw0rd",
+    "database.password": "YourStrong@Passw0rd",
     "database.names": "mig_test_db",
     "database.encrypt": "false",
     
@@ -22,6 +22,8 @@
     
     "decimal.handling.mode": "precise",
     "time.precision.mode": "adaptive_time_microseconds",
+    
+    "tombstones.on.delete": "true",
     
     "transforms": "route",
     "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
