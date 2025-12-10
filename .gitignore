@@ -33,3 +33,4 @@ data/
 
 # Temporary files
 /tmp/
+debezium-setup/custom-smt/target/*
