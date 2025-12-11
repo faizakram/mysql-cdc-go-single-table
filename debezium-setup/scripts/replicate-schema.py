@@ -10,23 +10,38 @@ import pyodbc
 import psycopg2
 import sys
 import time
+import os
+from pathlib import Path
 
-# Configuration
+# Load environment variables from .env file
+def load_env():
+    env_file = Path(__file__).parent.parent / '.env'
+    if env_file.exists():
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ[key.strip()] = value.strip()
+
+load_env()
+
+# Configuration from environment variables
 MSSQL_CONFIG = {
-    'server': 'localhost,1433',
-    'database': 'mig_test_db',
-    'username': 'Sa',
-    'password': 'YourStrong@Passw0rd',
+    'server': f"localhost,{os.getenv('MSSQL_PORT', '1433')}",
+    'database': os.getenv('MSSQL_DATABASE', 'Employees'),
+    'username': os.getenv('MSSQL_USER', 'sa'),
+    'password': os.getenv('MSSQL_PASSWORD', 'YourStrong@Passw0rd'),
     'driver': '{ODBC Driver 18 for SQL Server}',
     'TrustServerCertificate': 'yes'
 }
 
 POSTGRES_CONFIG = {
     'host': 'localhost',
-    'port': 5432,
-    'database': 'target_db',
-    'user': 'admin',
-    'password': 'admin123'
+    'port': int(os.getenv('POSTGRES_PORT', '5432')),
+    'database': os.getenv('POSTGRES_DATABASE', 'target_db'),
+    'user': os.getenv('POSTGRES_USER', 'postgres'),
+    'password': os.getenv('POSTGRES_PASSWORD', 'postgres')
 }
 
 # Type mapping: MS SQL → PostgreSQL

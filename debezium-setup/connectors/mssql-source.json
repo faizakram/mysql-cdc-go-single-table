@@ -4,11 +4,11 @@
     "connector.class": "io.debezium.connector.sqlserver.SqlServerConnector",
     "tasks.max": "10",
     
-    "database.hostname": "mssql-test",
+    "database.hostname": "host.docker.internal",
     "database.port": "1433",
-    "database.user": "SA",
+    "database.user": "sa",
     "database.password": "YourStrong@Passw0rd",
-    "database.names": "mig_test_db",
+    "database.names": "Employees",
     "database.encrypt": "false",
     
     "topic.prefix": "mssql",

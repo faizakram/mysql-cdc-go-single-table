@@ -9,15 +9,29 @@
 #   - User has appropriate CDC permissions
 #
 # This script automates:
-# 1. Starts all infrastructure containers (Kafka, Zookeeper, Debezium)
-# 2. Validates MS SQL prerequisites (database exists, CDC enabled)
-# 3. Cleans PostgreSQL target and replicates schema from MS SQL
-# 4. Builds and deploys custom snake_case SMT
-# 5. Deploys CDC connectors (source and sink)
-# 6. Verifies the deployment
+# 1. Loads configuration from .env file
+# 2. Starts all infrastructure containers (Kafka, Zookeeper, Debezium)
+# 3. Validates MS SQL prerequisites (database exists, CDC enabled)
+# 4. Cleans PostgreSQL target and replicates schema from MS SQL
+# 5. Builds and deploys custom snake_case SMT
+# 6. Generates and deploys CDC connectors from .env configuration
+# 7. Verifies the deployment
 #################################################################
 
 set -e  # Exit on any error
+
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load environment variables from .env file
+if [ -f "$PROJECT_DIR/.env" ]; then
+    source "$PROJECT_DIR/.env"
+    echo "✅ Loaded configuration from .env file"
+else
+    echo "❌ ERROR: .env file not found at $PROJECT_DIR/.env"
+    exit 1
+fi
 
 # Color codes for output
 RED='\033[0;31m'
@@ -156,8 +170,8 @@ print_success "Docker compose started"
 # Wait for services (using simpler checks that work with these Docker images)
 wait_for_service "Zookeeper" 30 2 "docker exec zookeeper bash -c 'echo srvr | nc localhost 2181'"
 wait_for_service "Kafka" 30 2 "docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092"
-wait_for_service "MS SQL Server" 30 2 "docker exec mssql-test /opt/mssql-tools18/bin/sqlcmd -S localhost -U Sa -P 'YourStrong@Passw0rd' -C -Q 'SELECT 1'"
-wait_for_service "PostgreSQL" 30 2 "docker exec postgres18 psql -U admin -d postgres -c 'SELECT 1'"
+wait_for_service "MS SQL Server" 30 2 "docker exec mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -C -Q 'SELECT 1'"
+wait_for_service "PostgreSQL" 30 2 "docker exec postgres-target psql -U postgres -d target_db -c 'SELECT 1'"
 
 # Wait for Debezium Connect (takes longer)
 print_info "Waiting for Debezium Connect to be ready (this may take 60+ seconds)..."
@@ -173,31 +187,31 @@ print_success "All infrastructure services are ready"
 print_section "Step 2: Validating MS SQL Source Prerequisites"
 
 # Check if database exists
-print_info "Checking if source database 'mig_test_db' exists..."
-DB_EXISTS=$(docker exec -i mssql-test /opt/mssql-tools18/bin/sqlcmd -S localhost -U Sa -P 'YourStrong@Passw0rd' -C -h -1 -Q "SET NOCOUNT ON; SELECT CASE WHEN EXISTS(SELECT 1 FROM sys.databases WHERE name = 'mig_test_db') THEN 1 ELSE 0 END;" | tr -d '[:space:]')
+print_info "Checking if source database '$MSSQL_DATABASE' exists..."
+DB_EXISTS=$(docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -h -1 -Q "SET NOCOUNT ON; SELECT CASE WHEN EXISTS(SELECT 1 FROM sys.databases WHERE name = '$MSSQL_DATABASE') THEN 1 ELSE 0 END;" | tr -d '[:space:]')
 
 if [ "$DB_EXISTS" != "1" ]; then
-    print_error "Source database 'mig_test_db' does not exist!"
+    print_error "Source database '$MSSQL_DATABASE' does not exist!"
     print_info "Please create the database on MS SQL Server first"
     exit 1
 fi
-print_success "Source database 'mig_test_db' exists"
+print_success "Source database '$MSSQL_DATABASE' exists"
 
 # Check if CDC is enabled on database
 print_info "Checking if CDC is enabled on database..."
-CDC_ENABLED=$(docker exec -i mssql-test /opt/mssql-tools18/bin/sqlcmd -S localhost -U Sa -P 'YourStrong@Passw0rd' -C -h -1 -Q "SET NOCOUNT ON; SELECT is_cdc_enabled FROM sys.databases WHERE name = 'mig_test_db';" | tr -d '[:space:]')
+CDC_ENABLED=$(docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -h -1 -Q "SET NOCOUNT ON; SELECT is_cdc_enabled FROM sys.databases WHERE name = '$MSSQL_DATABASE';" | tr -d '[:space:]')
 
 if [ "$CDC_ENABLED" != "1" ]; then
-    print_error "CDC is not enabled on database 'mig_test_db'!"
+    print_error "CDC is not enabled on database '$MSSQL_DATABASE'!"
     print_info "Please enable CDC manually using:"
-    print_info "  USE mig_test_db; EXEC sys.sp_cdc_enable_db;"
+    print_info "  USE $MSSQL_DATABASE; EXEC sys.sp_cdc_enable_db;"
     exit 1
 fi
 print_success "CDC is enabled on database"
 
 # Check if there are any CDC-enabled tables
 print_info "Checking for CDC-enabled tables..."
-CDC_TABLES=$(docker exec -i mssql-test /opt/mssql-tools18/bin/sqlcmd -S localhost -U Sa -P 'YourStrong@Passw0rd' -C -d mig_test_db -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1;" | tr -d '[:space:]')
+CDC_TABLES=$(docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -d $MSSQL_DATABASE -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1;" | tr -d '[:space:]')
 
 if [ "$CDC_TABLES" == "0" ]; then
     print_warning "No CDC-enabled tables found in database!"
@@ -208,7 +222,7 @@ else
     
     # List CDC-enabled tables
     print_info "CDC-enabled tables:"
-    docker exec -i mssql-test /opt/mssql-tools18/bin/sqlcmd -S localhost -U Sa -P 'YourStrong@Passw0rd' -C -d mig_test_db -h -1 -Q "SET NOCOUNT ON; SELECT SCHEMA_NAME(schema_id) + '.' + name FROM sys.tables WHERE is_tracked_by_cdc = 1;" | grep -v "^$"
+    docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -d $MSSQL_DATABASE -h -1 -Q "SET NOCOUNT ON; SELECT SCHEMA_NAME(schema_id) + '.' + name FROM sys.tables WHERE is_tracked_by_cdc = 1;" | grep -v "^$"
 fi
 
 print_success "MS SQL prerequisites validation complete"
@@ -221,7 +235,7 @@ print_section "Step 3: Preparing PostgreSQL Target and Replicating Schema"
 
 # Clean up PostgreSQL target database
 print_info "Cleaning up PostgreSQL target database..."
-docker exec -i postgres18 psql -U admin -d target_db -c "DROP SCHEMA IF EXISTS dbo CASCADE; CREATE SCHEMA dbo;" > /dev/null 2>&1
+docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "DROP SCHEMA IF EXISTS $POSTGRES_SCHEMA CASCADE; CREATE SCHEMA $POSTGRES_SCHEMA;" > /dev/null 2>&1
 print_success "PostgreSQL target database cleaned"
 
 print_info "Running automatic schema replication from MS SQL..."
@@ -231,7 +245,7 @@ print_success "Schema replication complete"
 
 # Verify PostgreSQL tables
 print_info "Verifying PostgreSQL tables..."
-docker exec -i postgres18 psql -U admin -d target_db -c "\dt dbo.*"
+docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "\dt $POSTGRES_SCHEMA.*"
 
 print_success "PostgreSQL schema verified"
 
@@ -271,42 +285,85 @@ print_success "Custom transform deployed"
 
 print_section "Step 5: Deploying CDC Connectors"
 
-# Check if connectors already exist and delete them
-print_info "Checking for existing connectors..."
-if curl -s http://localhost:8083/connectors | grep -q "mssql-source-connector"; then
-    print_warning "Deleting existing mssql-source-connector..."
-    curl -X DELETE http://localhost:8083/connectors/mssql-source-connector
+# Generate connector configurations from .env
+print_info "Generating connector configurations from .env file..."
+bash scripts/generate-connectors.sh
+print_success "Connector configurations generated"
+
+# =========================================================================
+# Comprehensive Cleanup to Prevent Corruption Issues
+# =========================================================================
+print_info "Performing comprehensive cleanup to prevent corruption..."
+
+# Step 1: Delete existing connectors (if any)
+print_info "Step 1/4: Checking for existing connectors..."
+EXISTING_CONNECTORS=$(curl -s http://localhost:8083/connectors 2>/dev/null || echo "[]")
+
+if echo "$EXISTING_CONNECTORS" | grep -q "$SOURCE_CONNECTOR_NAME"; then
+    print_warning "Deleting existing $SOURCE_CONNECTOR_NAME..."
+    curl -X DELETE http://localhost:8083/connectors/$SOURCE_CONNECTOR_NAME 2>/dev/null || true
     sleep 2
 fi
 
-if curl -s http://localhost:8083/connectors | grep -q "postgres-sink-connector"; then
-    print_warning "Deleting existing postgres-sink-connector..."
-    curl -X DELETE http://localhost:8083/connectors/postgres-sink-connector
+if echo "$EXISTING_CONNECTORS" | grep -q "$SINK_CONNECTOR_NAME"; then
+    print_warning "Deleting existing $SINK_CONNECTOR_NAME..."
+    curl -X DELETE http://localhost:8083/connectors/$SINK_CONNECTOR_NAME 2>/dev/null || true
     sleep 2
 fi
 
-# Delete Kafka topics to force fresh snapshot
-print_info "Cleaning up old Kafka topics and offsets for fresh snapshot..."
-TOPICS_TO_DELETE=$(docker exec kafka kafka-topics --list --bootstrap-server localhost:9092 2>/dev/null | grep -E "^mssql|schema-changes.mssql|connect-offsets" || true)
+# Step 2: Wait for connectors to fully stop
+print_info "Step 2/4: Waiting for connectors to fully stop..."
+sleep 3
 
-if [ ! -z "$TOPICS_TO_DELETE" ]; then
-    print_warning "Deleting old topics to force fresh snapshot..."
-    for topic in $TOPICS_TO_DELETE; do
-        docker exec kafka kafka-topics --delete --topic "$topic" --bootstrap-server localhost:9092 2>/dev/null || true
-    done
-    sleep 3
-    print_success "Old topics deleted"
+# Step 3: Delete ALL related Kafka topics (data + internal state topics)
+print_info "Step 3/4: Cleaning up all Kafka topics and internal state..."
+ALL_TOPICS=$(docker exec kafka kafka-topics --list --bootstrap-server localhost:9092 2>/dev/null || echo "")
+
+if [ ! -z "$ALL_TOPICS" ]; then
+    # Delete data topics matching our prefix
+    DATA_TOPICS=$(echo "$ALL_TOPICS" | grep -E "^$TOPIC_PREFIX\." || true)
+    # Delete schema history topics
+    SCHEMA_TOPICS=$(echo "$ALL_TOPICS" | grep -E "schema-changes\.$TOPIC_PREFIX$" || true)
+    # Delete internal Connect topics (these can cause corruption)
+    CONNECT_TOPICS=$(echo "$ALL_TOPICS" | grep -E "^connect-configs|^connect-offsets|^connect-status" || true)
+    
+    TOPICS_TO_DELETE=$(echo -e "$DATA_TOPICS\n$SCHEMA_TOPICS\n$CONNECT_TOPICS" | grep -v "^$" || true)
+    
+    if [ ! -z "$TOPICS_TO_DELETE" ]; then
+        print_warning "Deleting topics to ensure clean state:"
+        echo "$TOPICS_TO_DELETE" | while read topic; do
+            if [ ! -z "$topic" ]; then
+                echo "  - Deleting topic: $topic"
+                docker exec kafka kafka-topics --delete --topic "$topic" --bootstrap-server localhost:9092 2>/dev/null || true
+            fi
+        done
+        sleep 5
+        print_success "All topics deleted"
+    else
+        print_info "No topics to delete"
+    fi
 else
-    print_info "No old topics found"
+    print_info "No topics found"
 fi
+
+# Step 4: Restart Debezium Connect to clear in-memory state
+print_info "Step 4/4: Restarting Debezium Connect to clear in-memory state..."
+docker restart debezium-connect > /dev/null 2>&1
+
+print_info "Waiting for Debezium Connect to restart..."
+sleep 10
+wait_for_service "Debezium Connect" 30 2 "curl -s http://localhost:8083/ | grep version"
+
+print_success "Comprehensive cleanup completed - corruption prevention measures applied"
+print_success "System is now in a clean state for fresh deployment"
 
 # Deploy source connector
-print_info "Deploying MS SQL source connector..."
+print_info "Deploying MS SQL source connector ($SOURCE_CONNECTOR_NAME)..."
 curl -X POST -H "Content-Type: application/json" --data @connectors/mssql-source.json http://localhost:8083/connectors
 sleep 5
 
 # Deploy sink connector
-print_info "Deploying PostgreSQL sink connector..."
+print_info "Deploying PostgreSQL sink connector ($SINK_CONNECTOR_NAME)..."
 curl -X POST -H "Content-Type: application/json" --data @connectors/postgres-sink.json http://localhost:8083/connectors
 sleep 5
 
@@ -324,7 +381,7 @@ print_section "Step 6: Verifying Deployment"
 
 # Check connector status
 print_info "Checking MS SQL source connector status..."
-SOURCE_STATUS=$(curl -s http://localhost:8083/connectors/mssql-source-connector/status | jq -r '.connector.state')
+SOURCE_STATUS=$(curl -s http://localhost:8083/connectors/$SOURCE_CONNECTOR_NAME/status | jq -r '.connector.state')
 if [ "$SOURCE_STATUS" == "RUNNING" ]; then
     print_success "MS SQL source connector: RUNNING"
 else
@@ -332,7 +389,7 @@ else
 fi
 
 print_info "Checking PostgreSQL sink connector status..."
-SINK_STATUS=$(curl -s http://localhost:8083/connectors/postgres-sink-connector/status | jq -r '.connector.state')
+SINK_STATUS=$(curl -s http://localhost:8083/connectors/$SINK_CONNECTOR_NAME/status | jq -r '.connector.state')
 if [ "$SINK_STATUS" == "RUNNING" ]; then
     print_success "PostgreSQL sink connector: RUNNING"
 else
@@ -344,25 +401,25 @@ print_info "Waiting for initial snapshot to complete (20 seconds)..."
 sleep 20
 
 print_info "Checking replicated data in PostgreSQL..."
-PG_COUNT=$(docker exec -i postgres18 psql -U admin -d target_db -t -c "SELECT COUNT(*) FROM dbo.employees;" 2>/dev/null | tr -d ' ' || echo "0")
-MSSQL_COUNT=$(docker exec -i mssql-test /opt/mssql-tools18/bin/sqlcmd -S localhost -U Sa -P 'YourStrong@Passw0rd' -d mig_test_db -C -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.Employees;" 2>/dev/null | tr -d ' ' || echo "0")
+PG_COUNT=$(docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -t -c "SELECT COUNT(*) FROM $POSTGRES_SCHEMA.employees;" 2>/dev/null | tr -d ' ' || echo "0")
+MSSQL_COUNT=$(docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -d $MSSQL_DATABASE -C -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.Employees;" 2>/dev/null | tr -d ' ' || echo "0")
 
 echo ""
 print_info "Data replication status:"
 
 # Get first CDC-enabled table for verification
-FIRST_CDC_TABLE=$(docker exec -i mssql-test /opt/mssql-tools18/bin/sqlcmd -S localhost -U Sa -P 'YourStrong@Passw0rd' -C -d mig_test_db -h -1 -Q "SET NOCOUNT ON; SELECT TOP 1 SCHEMA_NAME(schema_id) + '.' + name FROM sys.tables WHERE is_tracked_by_cdc = 1;" 2>/dev/null | tr -d '[:space:]' || echo "")
+FIRST_CDC_TABLE=$(docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -d $MSSQL_DATABASE -h -1 -Q "SET NOCOUNT ON; SELECT TOP 1 SCHEMA_NAME(schema_id) + '.' + name FROM sys.tables WHERE is_tracked_by_cdc = 1;" 2>/dev/null | tr -d '[:space:]' || echo "")
 
 if [ -n "$FIRST_CDC_TABLE" ]; then
     SCHEMA=$(echo "$FIRST_CDC_TABLE" | cut -d'.' -f1)
     TABLE=$(echo "$FIRST_CDC_TABLE" | cut -d'.' -f2)
     
     # Get record counts
-    MSSQL_COUNT=$(docker exec -i mssql-test /opt/mssql-tools18/bin/sqlcmd -S localhost -U Sa -P 'YourStrong@Passw0rd' -C -d mig_test_db -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM ${FIRST_CDC_TABLE};" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    MSSQL_COUNT=$(docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -d $MSSQL_DATABASE -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM ${FIRST_CDC_TABLE};" 2>/dev/null | tr -d '[:space:]' || echo "0")
     
     # Convert table name to snake_case for PostgreSQL
     PG_TABLE=$(echo "$TABLE" | sed 's/\([A-Z]\)/_\L\1/g' | sed 's/^_//')
-    PG_COUNT=$(docker exec -i postgres18 psql -U admin -d target_db -t -c "SELECT COUNT(*) FROM ${SCHEMA}.${PG_TABLE};" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    PG_COUNT=$(docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -t -c "SELECT COUNT(*) FROM ${SCHEMA}.${PG_TABLE};" 2>/dev/null | tr -d '[:space:]' || echo "0")
     
     echo "  MS SQL ${FIRST_CDC_TABLE}: $MSSQL_COUNT records"
     echo "  PostgreSQL ${SCHEMA}.${PG_TABLE}: $PG_COUNT records"
@@ -370,14 +427,14 @@ if [ -n "$FIRST_CDC_TABLE" ]; then
     if [ "$PG_COUNT" -gt 0 ]; then
         print_success "✅ Initial snapshot completed successfully!"
         print_info "Sample data from PostgreSQL:"
-        docker exec -i postgres18 psql -U admin -d target_db -c "SELECT * FROM ${SCHEMA}.${PG_TABLE} LIMIT 3;" 2>/dev/null || true
+        docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "SELECT * FROM ${SCHEMA}.${PG_TABLE} LIMIT 3;" 2>/dev/null || true
     else
         print_warning "⚠️  Snapshot may still be in progress or waiting to start"
         print_info "Checking connector status..."
         
         # Check if connectors are running
-        SOURCE_STATUS=$(curl -s http://localhost:8083/connectors/mssql-source-connector/status 2>/dev/null | jq -r '.connector.state' 2>/dev/null || echo "UNKNOWN")
-        SINK_STATUS=$(curl -s http://localhost:8083/connectors/postgres-sink-connector/status 2>/dev/null | jq -r '.connector.state' 2>/dev/null || echo "UNKNOWN")
+        SOURCE_STATUS=$(curl -s http://localhost:8083/connectors/$SOURCE_CONNECTOR_NAME/status 2>/dev/null | jq -r '.connector.state' 2>/dev/null || echo "UNKNOWN")
+        SINK_STATUS=$(curl -s http://localhost:8083/connectors/$SINK_CONNECTOR_NAME/status 2>/dev/null | jq -r '.connector.state' 2>/dev/null || echo "UNKNOWN")
         
         echo "  Source connector: $SOURCE_STATUS"
         echo "  Sink connector: $SINK_STATUS"
@@ -386,7 +443,7 @@ if [ -n "$FIRST_CDC_TABLE" ]; then
         echo "  docker logs debezium-connect 2>&1 | grep -i 'snapshot'"
         
         print_info "To verify data in Kafka:"
-        echo "  docker exec kafka kafka-console-consumer --topic mssql.mig_test_db.${SCHEMA}.${TABLE} --from-beginning --max-messages 1 --bootstrap-server localhost:9092"
+        echo "  docker exec kafka kafka-console-consumer --topic $TOPIC_PREFIX.$MSSQL_DATABASE.${SCHEMA}.${TABLE} --from-beginning --max-messages 1 --bootstrap-server localhost:9092"
     fi
 else
     print_warning "⚠️  No CDC-enabled tables found to verify"
@@ -395,7 +452,7 @@ fi
 
 # List Kafka topics
 print_info "Kafka topics created:"
-docker exec kafka kafka-topics --list --bootstrap-server localhost:9092 2>/dev/null | grep mssql || echo "  (No topics created yet)"
+docker exec kafka kafka-topics --list --bootstrap-server localhost:9092 2>/dev/null | grep $TOPIC_PREFIX || echo "  (No topics created yet)"
 
 #################################################################
 # Final Summary
@@ -422,12 +479,12 @@ echo ""
 echo "3. Test real-time CDC by inserting data in your MS SQL tables"
 echo ""
 echo "4. Verify data in PostgreSQL:"
-echo "   docker exec -i postgres18 psql -U admin -d target_db -c \"\\dt dbo.*\""
+echo "   docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c \"\\dt $POSTGRES_SCHEMA.*\""
 echo ""
 
 print_info "Troubleshooting:"
 echo "  • View Debezium logs: docker logs -f debezium-connect"
-echo "  • View connector status: curl http://localhost:8083/connectors/mssql-source-connector/status | jq"
+echo "  • View connector status: curl http://localhost:8083/connectors/$SOURCE_CONNECTOR_NAME/status | jq"
 echo "  • View Kafka topics: docker exec kafka kafka-topics --list --bootstrap-server localhost:9092"
 echo ""
 

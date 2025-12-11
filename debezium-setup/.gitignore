@@ -8,8 +8,16 @@ __pycache__/
 # Maven build artifacts
 custom-smt/target/
 
-# Generated connector files
-connectors/postgres-sink-generated.json
+# Environment configuration (contains sensitive data)
+.env
+
+# Generated connector files (auto-generated from .env)
+connectors/mssql-source.json
+connectors/postgres-sink.json
+
+# Log files
+*.log
+*-log.txt
 
 # IDE files
 .vscode/
