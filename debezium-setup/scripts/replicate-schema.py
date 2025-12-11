@@ -26,9 +26,29 @@ def load_env():
 
 load_env()
 
+# Detect if running inside Docker container
+def is_running_in_container():
+    return os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')
+
+# Determine appropriate hostnames
+RUNNING_IN_CONTAINER = is_running_in_container()
+if RUNNING_IN_CONTAINER:
+    # When running inside deployer container, use Docker service names
+    mssql_host = os.getenv('MSSQL_HOST', 'mssql-source')
+    postgres_host = os.getenv('POSTGRES_HOST', 'postgres-target')
+    # Replace host.docker.internal with actual service name
+    if mssql_host == 'host.docker.internal':
+        mssql_host = 'mssql-source'
+    if postgres_host == 'host.docker.internal':
+        postgres_host = 'postgres-target'
+else:
+    # When running on host, use localhost or configured host
+    mssql_host = 'localhost'
+    postgres_host = 'localhost'
+
 # Configuration from environment variables
 MSSQL_CONFIG = {
-    'server': f"localhost,{os.getenv('MSSQL_PORT', '1433')}",
+    'server': f"{mssql_host},{os.getenv('MSSQL_PORT', '1433')}",
     'database': os.getenv('MSSQL_DATABASE', 'Employees'),
     'username': os.getenv('MSSQL_USER', 'sa'),
     'password': os.getenv('MSSQL_PASSWORD', 'YourStrong@Passw0rd'),
@@ -37,7 +57,7 @@ MSSQL_CONFIG = {
 }
 
 POSTGRES_CONFIG = {
-    'host': 'localhost',
+    'host': postgres_host,
     'port': int(os.getenv('POSTGRES_PORT', '5432')),
     'database': os.getenv('POSTGRES_DATABASE', 'target_db'),
     'user': os.getenv('POSTGRES_USER', 'postgres'),

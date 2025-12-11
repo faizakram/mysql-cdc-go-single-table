@@ -100,8 +100,18 @@ print_section "Step 0: Pre-flight Checks"
 print_info "Checking required tools..."
 MISSING_TOOLS=()
 
-if ! command_exists docker; then
-    MISSING_TOOLS+=("docker")
+# Check if running inside Docker container
+RUNNING_IN_CONTAINER=false
+if [ -f /.dockerenv ] || grep -q docker /proc/1/cgroup 2>/dev/null; then
+    RUNNING_IN_CONTAINER=true
+    print_info "Detected running inside container - skipping docker check"
+fi
+
+# Only check for docker if not running in container
+if [ "$RUNNING_IN_CONTAINER" = false ]; then
+    if ! command_exists docker; then
+        MISSING_TOOLS+=("docker")
+    fi
 fi
 
 if ! command_exists python3; then
@@ -132,29 +142,34 @@ fi
 
 print_success "All required tools are installed"
 
-# Check Python virtual environment
-if [ ! -d ".venv" ]; then
-    print_warning "Virtual environment not found. Creating one..."
-    python3 -m venv .venv
-    print_success "Virtual environment created"
+# Setup Python environment (skip venv if in container)
+if [ "$RUNNING_IN_CONTAINER" = false ]; then
+    # Check Python virtual environment
+    if [ ! -d ".venv" ]; then
+        print_warning "Virtual environment not found. Creating one..."
+        python3 -m venv .venv
+        print_success "Virtual environment created"
+    fi
+    
+    print_info "Activating virtual environment..."
+    source .venv/bin/activate
+    
+    # Check Python packages
+    print_info "Checking Python packages..."
+    if ! python3 -c "import pyodbc" 2>/dev/null; then
+        print_warning "pyodbc not installed. Installing..."
+        pip install pyodbc psycopg2-binary
+    fi
+    
+    if ! python3 -c "import psycopg2" 2>/dev/null; then
+        print_warning "psycopg2 not installed. Installing..."
+        pip install pyodbc psycopg2-binary
+    fi
+    
+    print_success "Python packages verified"
+else
+    print_info "Running inside container - Python packages pre-installed"
 fi
-
-print_info "Activating virtual environment..."
-source .venv/bin/activate
-
-# Check Python packages
-print_info "Checking Python packages..."
-if ! python3 -c "import pyodbc" 2>/dev/null; then
-    print_warning "pyodbc not installed. Installing..."
-    pip install pyodbc psycopg2-binary
-fi
-
-if ! python3 -c "import psycopg2" 2>/dev/null; then
-    print_warning "psycopg2 not installed. Installing..."
-    pip install pyodbc psycopg2-binary
-fi
-
-print_success "Python packages verified"
 
 #################################################################
 # Step 1: Start Infrastructure
@@ -162,21 +177,27 @@ print_success "Python packages verified"
 
 print_section "Step 1: Starting Infrastructure Containers"
 
-print_info "Starting Docker containers..."
-docker compose up -d
+if [ "$RUNNING_IN_CONTAINER" = false ]; then
+    print_info "Starting Docker containers..."
+    docker compose up -d
+    print_success "Docker compose started"
+    
+    # Wait for services (using simpler checks that work with these Docker images)
+    wait_for_service "Zookeeper" 30 2 "docker exec zookeeper bash -c 'echo srvr | nc localhost 2181'"
+    wait_for_service "Kafka" 30 2 "docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092"
+    wait_for_service "MS SQL Server" 30 2 "docker exec mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -C -Q 'SELECT 1'"
+    wait_for_service "PostgreSQL" 30 2 "docker exec postgres-target psql -U postgres -d target_db -c 'SELECT 1'"
+    
+    # Wait for Debezium Connect (takes longer)
+    print_info "Waiting for Debezium Connect to be ready (this may take 60+ seconds)..."
+    sleep 30
+else
+    print_info "Running inside container - infrastructure should already be running"
+    print_info "Waiting for Debezium Connect to be ready..."
+    sleep 5
+fi
 
-print_success "Docker compose started"
-
-# Wait for services (using simpler checks that work with these Docker images)
-wait_for_service "Zookeeper" 30 2 "docker exec zookeeper bash -c 'echo srvr | nc localhost 2181'"
-wait_for_service "Kafka" 30 2 "docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092"
-wait_for_service "MS SQL Server" 30 2 "docker exec mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -C -Q 'SELECT 1'"
-wait_for_service "PostgreSQL" 30 2 "docker exec postgres-target psql -U postgres -d target_db -c 'SELECT 1'"
-
-# Wait for Debezium Connect (takes longer)
-print_info "Waiting for Debezium Connect to be ready (this may take 60+ seconds)..."
-sleep 30
-wait_for_service "Debezium Connect" 40 3 "curl -s http://localhost:8083/ | grep version"
+wait_for_service "Debezium Connect" 40 3 "curl -s http://debezium-connect:8083/ | grep version"
 
 print_success "All infrastructure services are ready"
 

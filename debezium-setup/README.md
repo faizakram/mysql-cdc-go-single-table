@@ -14,18 +14,38 @@
 
 ---
 
-## 🚀 Quick Start (3 Steps)
+## 🚀 Quick Start
+
+### Option 1: Container-Based Deployment (⭐ Recommended)
+
+**Zero manual installation! Everything runs in containers:**
 
 ```bash
 # 1. Clone and navigate
 git clone https://github.com/faizakram/mysql-cdc-go-single-table.git
 cd mysql-cdc-go-single-table/debezium-setup
 
-# 2. Configure (edit .env with your database credentials)
+# 2. Configure
 cp .env.example .env
-nano .env
+nano .env  # Edit with your database credentials
 
-# 3. Deploy everything
+# 3. Deploy everything (includes infrastructure + CDC pipeline)
+bash scripts/deploy-with-container.sh
+```
+
+**No Java, Python, or Maven installation needed!**
+
+### Option 2: Host-Based Deployment (Traditional)
+
+**If you have Java 17+, Python 3.8+, Maven 3.6+ already installed:**
+
+```bash
+# 1-2. Same as above (clone + configure)
+
+# 3. Start infrastructure
+docker compose up -d
+
+# 4. Deploy CDC pipeline
 bash scripts/deploy-all.sh
 ```
 
@@ -35,27 +55,15 @@ bash scripts/deploy-all.sh
 
 ## 📚 Documentation
 
-| Guide | Description |
-|-------|-------------|
-| **[FINAL_DEPLOYMENT_GUIDE.md](FINAL_DEPLOYMENT_GUIDE.md)** | **Complete deployment guide - START HERE** |
-| [COMPLETE_INSTALLATION_GUIDE.md](COMPLETE_INSTALLATION_GUIDE.md) | Detailed manual installation |
-| [AUTOMATIC_SCHEMA_REPLICATION.md](AUTOMATIC_SCHEMA_REPLICATION.md) | How schema replication works |
-| [FILE_STRUCTURE.md](FILE_STRUCTURE.md) | Project structure documentation |
-
-**👉 For deployment, see: [FINAL_DEPLOYMENT_GUIDE.md](FINAL_DEPLOYMENT_GUIDE.md)**
-
----
-
-## 📖 Documentation
-
-| Guide | Description | Who Should Read |
+| Guide | Description | Recommended For |
 |-------|-------------|-----------------|
-| **[DEPLOY_ALL_GUIDE.md](DEPLOY_ALL_GUIDE.md)** | **Automated deployment script** | **Everyone (easiest!)** |
-| **[QUICK_START.md](QUICK_START.md)** | Get started in 5 minutes | Manual deployment |
-| **[COMPLETE_INSTALLATION_GUIDE.md](COMPLETE_INSTALLATION_GUIDE.md)** | Full installation guide (Windows/Linux/macOS) | New users |
-| **[AUTOMATIC_SCHEMA_REPLICATION.md](AUTOMATIC_SCHEMA_REPLICATION.md)** | Technical details of automatic schema replication | Developers |
-| **[SETUP_GUIDE.md](SETUP_GUIDE.md)** | Detailed configuration guide | Advanced users |
-| **[TESTING_GUIDE.md](TESTING_GUIDE.md)** | Testing and validation procedures | QA engineers |
+| **[CONTAINER_DEPLOYMENT_GUIDE.md](CONTAINER_DEPLOYMENT_GUIDE.md)** | **Container-based deployment (zero manual installation)** | **Everyone ⭐** |
+| [FINAL_DEPLOYMENT_GUIDE.md](FINAL_DEPLOYMENT_GUIDE.md) | Traditional host-based deployment | Users with Java/Python installed |
+| [FILE_STRUCTURE.md](FILE_STRUCTURE.md) | Project structure and architecture | Developers |
+| [AUTOMATIC_SCHEMA_REPLICATION.md](AUTOMATIC_SCHEMA_REPLICATION.md) | How schema replication works | Technical users |
+| [COMPLETE_INSTALLATION_GUIDE.md](COMPLETE_INSTALLATION_GUIDE.md) | Manual installation guide | Advanced setup |
+
+**👉 New users: Start with [CONTAINER_DEPLOYMENT_GUIDE.md](CONTAINER_DEPLOYMENT_GUIDE.md) - no manual installation needed!**
 
 ---
 

@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # Deployment container - runs deployment scripts with all dependencies
+  deployer:
+    build:
+      context: .
+      dockerfile: Dockerfile.deployer
+    container_name: cdc-deployer
+    volumes:
+      # Mount .env file
+      - ./.env:/deployment/.env:ro
+      # Mount scripts for live editing (optional)
+      - ./scripts:/deployment/scripts
+      - ./connectors:/deployment/connectors
+      - ./custom-smt:/deployment/custom-smt
+    networks:
+      - debezium-network
+      - mssql-network
+      - postgres-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    # Keep container running
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+
+networks:
+  debezium-network:
+    external: true
+    name: debezium-setup_debezium-network
+  mssql-network:
+    external: true
+    name: mssql-network
+  postgres-network:
+    external: true
+    name: postgres-network
