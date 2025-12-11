@@ -1,32 +1,65 @@
-# Deploy-All Script
+# Deploy-All Script Guide
 
 ## Overview
 
-The `deploy-all.sh` script is a comprehensive automation tool that handles the entire deployment process for the MS SQL to PostgreSQL CDC system. It eliminates manual steps and ensures consistent deployment across environments.
+The `deploy-all.sh` script is a comprehensive automation tool that handles the entire deployment process for the MS SQL to PostgreSQL CDC system with **centralized configuration via `.env` file**. It eliminates manual steps and ensures consistent deployment across environments.
 
 ## What It Does
 
 This script automates:
 
-1. **Pre-flight Checks** - Verifies all required tools are installed
-2. **Virtual Environment Setup** - Creates and activates Python venv with dependencies
-3. **Infrastructure Startup** - Launches all Docker containers (Zookeeper, Kafka, Debezium, MS SQL, PostgreSQL)
-4. **MS SQL Configuration** - Creates database, enables CDC, creates sample tables
-5. **Schema Replication** - Automatically replicates MS SQL schema to PostgreSQL
-6. **Custom Transform Build** - Compiles and deploys snake_case transformation JAR
-7. **Connector Deployment** - Deploys both source and sink connectors
-8. **Verification** - Confirms all components are running and data is replicating
+1. **Configuration Loading** - Loads all settings from `.env` file (single source of truth)
+2. **Pre-flight Checks** - Verifies all required tools are installed
+3. **Virtual Environment Setup** - Creates and activates Python venv with dependencies
+4. **Infrastructure Startup** - Launches all Docker containers (Zookeeper, Kafka, Debezium, MS SQL, PostgreSQL)
+5. **MS SQL Validation** - Verifies database exists, CDC enabled, tables configured
+6. **Schema Replication** - Automatically replicates MS SQL schema to PostgreSQL
+7. **Custom Transform Build** - Compiles and deploys snake_case transformation JAR
+8. **Connector Generation** - Generates connector JSON files from `.env` configuration
+9. **Connector Deployment** - Deploys both source and sink connectors
+10. **Verification** - Confirms all components are running and data is replicating
+
+## Prerequisites
+
+### First Time Setup
+
+**1. Configure Environment Variables**
+
+```bash
+cd /path/to/mysql-cdc-go-single-table/debezium-setup
+
+# Copy the example configuration
+cp .env.example .env
+
+# Edit with your database credentials
+nano .env  # or use your preferred editor
+```
+
+**Required settings in `.env`:**
+- `MSSQL_DATABASE` - Your source database name
+- `MSSQL_USER` / `MSSQL_PASSWORD` - MS SQL credentials
+- `POSTGRES_DATABASE` - Target database name
+- `POSTGRES_USER` / `POSTGRES_PASSWORD` - PostgreSQL credentials
+
+**2. Ensure MS SQL is ready**
+- Database must exist
+- CDC must be enabled
+- Tables must have CDC enabled
 
 ## Usage
 
 ### Basic Usage
 
 ```bash
-cd /path/to/mysql-cdc-go-single-table/debezium-setup
-./scripts/deploy-all.sh
+# From the debezium-setup directory
+bash scripts/deploy-all.sh
 ```
 
-### First Time Setup
+The script will:
+1. Load configuration from `.env`
+2. Validate all settings
+3. Deploy complete CDC pipeline
+4. Show verification results
 
 ```bash
 # Clone the repository

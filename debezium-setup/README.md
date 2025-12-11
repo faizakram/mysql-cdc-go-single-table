@@ -2,6 +2,7 @@
 
 **Fully automatic Change Data Capture (CDC)** system that replicates data from MS SQL Server to PostgreSQL in real-time with:
 
+- ✅ **Centralized configuration** - Single `.env` file for all settings
 - ✅ **Automatic schema replication** - No manual table creation!
 - ✅ **VARCHAR length preservation** - VARCHAR(50) stays VARCHAR(50)
 - ✅ **Native type conversion** - UNIQUEIDENTIFIER → UUID, JSON → JSON
@@ -13,32 +14,35 @@
 
 ---
 
-## 🚀 Quick Start (5 Minutes)
-
-### Option 1: Automated Deployment (Recommended)
+## 🚀 Quick Start (3 Steps)
 
 ```bash
-# Clone and deploy everything with one script
+# 1. Clone and navigate
 git clone https://github.com/faizakram/mysql-cdc-go-single-table.git
 cd mysql-cdc-go-single-table/debezium-setup
-./scripts/deploy-all.sh
+
+# 2. Configure (edit .env with your database credentials)
+cp .env.example .env
+nano .env
+
+# 3. Deploy everything
+bash scripts/deploy-all.sh
 ```
 
-**This automated script:**
-- ✅ Checks prerequisites
-- ✅ Starts all infrastructure
-- ✅ Sets up databases with CDC
-- ✅ Replicates schema automatically
-- ✅ Deploys connectors
-- ✅ Verifies everything works
+**✅ Done! Your CDC pipeline is running.**
 
-👉 **Details:** See [DEPLOY_ALL_GUIDE.md](DEPLOY_ALL_GUIDE.md)
+---
 
-### Option 2: Manual Deployment
+## 📚 Documentation
 
-👉 **New user?** See [QUICK_START.md](QUICK_START.md) to get started in 5 minutes.
+| Guide | Description |
+|-------|-------------|
+| **[FINAL_DEPLOYMENT_GUIDE.md](FINAL_DEPLOYMENT_GUIDE.md)** | **Complete deployment guide - START HERE** |
+| [COMPLETE_INSTALLATION_GUIDE.md](COMPLETE_INSTALLATION_GUIDE.md) | Detailed manual installation |
+| [AUTOMATIC_SCHEMA_REPLICATION.md](AUTOMATIC_SCHEMA_REPLICATION.md) | How schema replication works |
+| [FILE_STRUCTURE.md](FILE_STRUCTURE.md) | Project structure documentation |
 
-👉 **Complete instructions?** See [COMPLETE_INSTALLATION_GUIDE.md](COMPLETE_INSTALLATION_GUIDE.md) for step-by-step installation on Windows/Linux/macOS.
+**👉 For deployment, see: [FINAL_DEPLOYMENT_GUIDE.md](FINAL_DEPLOYMENT_GUIDE.md)**
 
 ---
 

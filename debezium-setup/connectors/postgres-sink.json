@@ -4,16 +4,16 @@
     "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
     "tasks.max": "10",
     
-    "connection.url": "jdbc:postgresql://postgres18:5432/target_db?currentSchema=dbo",
-    "connection.username": "admin",
-    "connection.password": "admin123",
+    "connection.url": "jdbc:postgresql://host.docker.internal:5432/target_db?currentSchema=dbo",
+    "connection.username": "postgres",
+    "connection.password": "postgres",
     
-    "topics.regex": "mssql\\.mig_test_db\\.dbo\\.(.*)",
+    "topics.regex": "mssql\\.Employees\\.dbo\\.(.*)",
     
     "transforms": "route,unwrap,renameDeleted,snakeCaseKey,snakeCaseValue,typeConversion",
     
     "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
-    "transforms.route.regex": "mssql\\.mig_test_db\\.dbo\\.(.*)",
+    "transforms.route.regex": "mssql\\.Employees\\.dbo\\.(.*)",
     "transforms.route.replacement": "$1",
     
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
@@ -26,8 +26,8 @@
     "transforms.snakeCaseValue.type": "com.debezium.transforms.SnakeCaseTransform$Value",
     
     "transforms.typeConversion.type": "com.debezium.transforms.TypeConversionTransform",
-    "transforms.typeConversion.uuid.columns": "user_id,session_id,transaction_id,last_login_id,unique_identifier_col",
-    "transforms.typeConversion.json.columns": "user_preferences,api_response,metadata,settings",
+    "transforms.typeConversion.uuid.columns": "user_id,session_id,transaction_id,last_login_id,unique_identifier_col,customer_guid,product_guid",
+    "transforms.typeConversion.json.columns": "user_preferences,api_response,metadata,settings,preferences_json,order_metadata",
     
     "table.name.format": "dbo.${topic}",
     "insert.mode": "upsert",
