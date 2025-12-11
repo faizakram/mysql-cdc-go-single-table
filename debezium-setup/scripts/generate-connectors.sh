@@ -71,12 +71,12 @@ cat > "$CONNECTORS_DIR/postgres-sink.json" <<EOF
     "connection.username": "${POSTGRES_USER}",
     "connection.password": "${POSTGRES_PASSWORD}",
     
-    "topics.regex": "${TOPIC_PREFIX}\\\\.${MSSQL_DATABASE}\\\\.${POSTGRES_SCHEMA}\\\\.(.*)",
+    "topics.regex": "${TOPIC_PREFIX}\\\\.${MSSQL_DATABASE}\\\\.${MSSQL_SCHEMA}\\\\.(.*)",
     
-    "transforms": "route,unwrap,renameDeleted,snakeCaseKey,snakeCaseValue,typeConversion",
+    "transforms": "route,unwrap,renameDeleted,castDeleted,snakeCaseKey,snakeCaseValue,typeConversion",
     
     "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
-    "transforms.route.regex": "${TOPIC_PREFIX}\\\\.${MSSQL_DATABASE}\\\\.${POSTGRES_SCHEMA}\\\\.(.*)",
+    "transforms.route.regex": "${TOPIC_PREFIX}\\\\.${MSSQL_DATABASE}\\\\.${MSSQL_SCHEMA}\\\\.(.*)",
     "transforms.route.replacement": "\$1",
     
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
@@ -84,6 +84,9 @@ cat > "$CONNECTORS_DIR/postgres-sink.json" <<EOF
     
     "transforms.renameDeleted.type": "org.apache.kafka.connect.transforms.ReplaceField\$Value",
     "transforms.renameDeleted.renames": "__deleted:__cdc_deleted",
+    
+    "transforms.castDeleted.type": "org.apache.kafka.connect.transforms.Cast\$Value",
+    "transforms.castDeleted.spec": "__cdc_deleted:boolean",
     
     "transforms.snakeCaseKey.type": "com.debezium.transforms.SnakeCaseTransform\$Key",
     "transforms.snakeCaseValue.type": "com.debezium.transforms.SnakeCaseTransform\$Value",
