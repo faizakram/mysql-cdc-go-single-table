@@ -44,6 +44,9 @@ POSTGRES_CONFIG = {
     'password': os.getenv('POSTGRES_PASSWORD', 'postgres')
 }
 
+# Target schema configuration
+POSTGRES_SCHEMA = os.getenv('POSTGRES_SCHEMA', 'dbo')
+
 # Type mapping: MS SQL → PostgreSQL
 TYPE_MAPPING = {
     # Integer types
@@ -205,7 +208,7 @@ def create_postgres_table(pg_conn, table_name, schema):
     columns.append("__cdc_deleted TEXT DEFAULT 'false'")
     
     # Build full CREATE TABLE statement
-    create_sql = f"CREATE TABLE IF NOT EXISTS dbo.{pg_table_name} (\n    "
+    create_sql = f"CREATE TABLE IF NOT EXISTS {POSTGRES_SCHEMA}.{pg_table_name} (\n    "
     create_sql += ",\n    ".join(columns)
     
     if pk_columns:

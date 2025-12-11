@@ -168,15 +168,20 @@ docker compose up -d
 print_success "Docker compose started"
 
 # Wait for services (using simpler checks that work with these Docker images)
-wait_for_service "Zookeeper" 30 2 "docker exec zookeeper bash -c 'echo srvr | nc localhost 2181'"
-wait_for_service "Kafka" 30 2 "docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092"
+if [ "${CDC_ENABLED,,}" == "true" ]; then
+    wait_for_service "Zookeeper" 30 2 "docker exec zookeeper bash -c 'echo srvr | nc localhost 2181'"
+    wait_for_service "Kafka" 30 2 "docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092"
+fi
+
 wait_for_service "MS SQL Server" 30 2 "docker exec mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -C -Q 'SELECT 1'"
 wait_for_service "PostgreSQL" 30 2 "docker exec postgres-target psql -U postgres -d target_db -c 'SELECT 1'"
 
-# Wait for Debezium Connect (takes longer)
-print_info "Waiting for Debezium Connect to be ready (this may take 60+ seconds)..."
-sleep 30
-wait_for_service "Debezium Connect" 40 3 "curl -s http://localhost:8083/ | grep version"
+if [ "${CDC_ENABLED,,}" == "true" ]; then
+    # Wait for Debezium Connect (takes longer)
+    print_info "Waiting for Debezium Connect to be ready (this may take 60+ seconds)..."
+    sleep 30
+    wait_for_service "Debezium Connect" 40 3 "curl -s http://localhost:8083/ | grep version"
+fi
 
 print_success "All infrastructure services are ready"
 
@@ -197,32 +202,37 @@ if [ "$DB_EXISTS" != "1" ]; then
 fi
 print_success "Source database '$MSSQL_DATABASE' exists"
 
-# Check if CDC is enabled on database
-print_info "Checking if CDC is enabled on database..."
-CDC_ENABLED=$(docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -h -1 -Q "SET NOCOUNT ON; SELECT is_cdc_enabled FROM sys.databases WHERE name = '$MSSQL_DATABASE';" | tr -d '[:space:]')
+# Check CDC configuration from .env
+if [ "${CDC_ENABLED,,}" == "true" ]; then
+    # Check if CDC is enabled on database
+    print_info "Checking if CDC is enabled on database..."
+    CDC_DB_ENABLED=$(docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -h -1 -Q "SET NOCOUNT ON; SELECT is_cdc_enabled FROM sys.databases WHERE name = '$MSSQL_DATABASE';" | tr -d '[:space:]')
 
-if [ "$CDC_ENABLED" != "1" ]; then
-    print_error "CDC is not enabled on database '$MSSQL_DATABASE'!"
-    print_info "Please enable CDC manually using:"
-    print_info "  USE $MSSQL_DATABASE; EXEC sys.sp_cdc_enable_db;"
-    exit 1
-fi
-print_success "CDC is enabled on database"
+    if [ "$CDC_DB_ENABLED" != "1" ]; then
+        print_error "CDC is not enabled on database '$MSSQL_DATABASE'!"
+        print_info "Please enable CDC manually using:"
+        print_info "  USE $MSSQL_DATABASE; EXEC sys.sp_cdc_enable_db;"
+        exit 1
+    fi
+    print_success "CDC is enabled on database"
 
-# Check if there are any CDC-enabled tables
-print_info "Checking for CDC-enabled tables..."
-CDC_TABLES=$(docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -d $MSSQL_DATABASE -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1;" | tr -d '[:space:]')
+    # Check if there are any CDC-enabled tables
+    print_info "Checking for CDC-enabled tables..."
+    CDC_TABLES=$(docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -d $MSSQL_DATABASE -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1;" | tr -d '[:space:]')
 
-if [ "$CDC_TABLES" == "0" ]; then
-    print_warning "No CDC-enabled tables found in database!"
-    print_info "Make sure to enable CDC on your tables using:"
-    print_info "  EXEC sys.sp_cdc_enable_table @source_schema = N'dbo', @source_name = N'YourTable', @role_name = NULL;"
+    if [ "$CDC_TABLES" == "0" ]; then
+        print_warning "No CDC-enabled tables found in database!"
+        print_info "Make sure to enable CDC on your tables using:"
+        print_info "  EXEC sys.sp_cdc_enable_table @source_schema = N'dbo', @source_name = N'YourTable', @role_name = NULL;"
+    else
+        print_success "Found $CDC_TABLES CDC-enabled table(s)"
+        
+        # List CDC-enabled tables
+        print_info "CDC-enabled tables:"
+        docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -d $MSSQL_DATABASE -h -1 -Q "SET NOCOUNT ON; SELECT SCHEMA_NAME(schema_id) + '.' + name FROM sys.tables WHERE is_tracked_by_cdc = 1;" | grep -v "^$"
+    fi
 else
-    print_success "Found $CDC_TABLES CDC-enabled table(s)"
-    
-    # List CDC-enabled tables
-    print_info "CDC-enabled tables:"
-    docker exec -i mssql-source /opt/mssql-tools18/bin/sqlcmd -S localhost -U $MSSQL_USER -P "$MSSQL_PASSWORD" -C -d $MSSQL_DATABASE -h -1 -Q "SET NOCOUNT ON; SELECT SCHEMA_NAME(schema_id) + '.' + name FROM sys.tables WHERE is_tracked_by_cdc = 1;" | grep -v "^$"
+    print_info "CDC_ENABLED=false - Skipping CDC validation"
 fi
 
 print_success "MS SQL prerequisites validation complete"
@@ -253,42 +263,57 @@ print_success "PostgreSQL schema verified"
 # Step 4: Build and Deploy Custom SMT
 #################################################################
 
-print_section "Step 4: Building and Deploying Custom Transform"
+if [ "${CDC_ENABLED,,}" == "true" ]; then
+    print_section "Step 4: Building and Deploying Custom Transform"
 
-print_info "Building snake_case transform JAR..."
-cd custom-smt
-mvn clean package -q
-cd ..
+    print_info "Building snake_case transform JAR..."
+    cd custom-smt
+    mvn clean package -q
+    cd ..
 
-if [ ! -f "custom-smt/target/snake-case-transform-1.0.0.jar" ]; then
-    print_error "Failed to build snake-case-transform-1.0.0.jar"
-    exit 1
+    if [ ! -f "custom-smt/target/snake-case-transform-1.0.0.jar" ]; then
+        print_error "Failed to build snake-case-transform-1.0.0.jar"
+        exit 1
+    fi
+
+    print_success "Custom transform built successfully"
+
+    print_info "Copying JAR to Debezium Connect..."
+    docker cp custom-smt/target/snake-case-transform-1.0.0.jar debezium-connect:/kafka/connect/
+
+    print_info "Restarting Debezium Connect to load new transform..."
+    docker restart debezium-connect
+
+    print_info "Waiting for Debezium Connect to restart (60 seconds)..."
+    sleep 30
+    wait_for_service "Debezium Connect" 30 2 "curl -s http://localhost:8083/ | grep version"
+
+    print_success "Custom transform deployed"
+else
+    print_section "Step 4: Skipping Custom Transform (CDC disabled)"
+    print_info "CDC_ENABLED=false - Custom transform not needed"
 fi
-
-print_success "Custom transform built successfully"
-
-print_info "Copying JAR to Debezium Connect..."
-docker cp custom-smt/target/snake-case-transform-1.0.0.jar debezium-connect:/kafka/connect/
-
-print_info "Restarting Debezium Connect to load new transform..."
-docker restart debezium-connect
-
-print_info "Waiting for Debezium Connect to restart (60 seconds)..."
-sleep 30
-wait_for_service "Debezium Connect" 30 2 "curl -s http://localhost:8083/ | grep version"
-
-print_success "Custom transform deployed"
 
 #################################################################
 # Step 5: Deploy CDC Connectors
 #################################################################
 
-print_section "Step 5: Deploying CDC Connectors"
+if [ "${CDC_ENABLED,,}" == "true" ]; then
+    print_section "Step 5: Deploying CDC Connectors"
 
-# Generate connector configurations from .env
-print_info "Generating connector configurations from .env file..."
-bash scripts/generate-connectors.sh
-print_success "Connector configurations generated"
+    # Generate connector configurations from .env
+    print_info "Generating connector configurations from .env file..."
+    bash scripts/generate-connectors.sh
+    print_success "Connector configurations generated"
+else
+    print_section "Step 5: Skipping CDC Connectors (CDC disabled)"
+    print_info "CDC_ENABLED=false - Debezium connectors not needed"
+    print_info ""
+    print_info "To sync data in full-load mode, run:"
+    print_info "  python3 scripts/sync-data.py"
+    print_success "Deployment complete"
+    exit 0
+fi
 
 # =========================================================================
 # Comprehensive Cleanup to Prevent Corruption Issues
