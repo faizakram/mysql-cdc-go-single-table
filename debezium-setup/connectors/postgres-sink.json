@@ -4,13 +4,13 @@
     "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
     "tasks.max": "10",
     
-    "connection.url": "jdbc:postgresql://host.docker.internal:5432/target_db?currentSchema=dbo",
+    "connection.url": "jdbc:postgresql://host.docker.internal:5432/target_db?currentSchema=campaign_test_4",
     "connection.username": "postgres",
     "connection.password": "postgres",
     
     "topics.regex": "mssql\\.Employees\\.dbo\\.(.*)",
     
-    "transforms": "route,unwrap,renameDeleted,snakeCaseKey,snakeCaseValue,typeConversion",
+    "transforms": "route,unwrap,renameDeleted,castDeleted,snakeCaseKey,snakeCaseValue,typeConversion",
     
     "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
     "transforms.route.regex": "mssql\\.Employees\\.dbo\\.(.*)",
@@ -22,6 +22,9 @@
     "transforms.renameDeleted.type": "org.apache.kafka.connect.transforms.ReplaceField$Value",
     "transforms.renameDeleted.renames": "__deleted:__cdc_deleted",
     
+    "transforms.castDeleted.type": "org.apache.kafka.connect.transforms.Cast$Value",
+    "transforms.castDeleted.spec": "__cdc_deleted:boolean",
+    
     "transforms.snakeCaseKey.type": "com.debezium.transforms.SnakeCaseTransform$Key",
     "transforms.snakeCaseValue.type": "com.debezium.transforms.SnakeCaseTransform$Value",
     
@@ -29,7 +32,7 @@
     "transforms.typeConversion.uuid.columns": "user_id,session_id,transaction_id,last_login_id,unique_identifier_col,customer_guid,product_guid",
     "transforms.typeConversion.json.columns": "user_preferences,api_response,metadata,settings,preferences_json,order_metadata",
     
-    "table.name.format": "dbo.${topic}",
+    "table.name.format": "campaign_test_4.${topic}",
     "insert.mode": "upsert",
     "delete.enabled": "true",
     "primary.key.mode": "record_key",

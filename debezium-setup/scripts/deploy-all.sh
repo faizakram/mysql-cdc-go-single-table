@@ -340,44 +340,37 @@ fi
 print_info "Step 2/4: Waiting for connectors to fully stop..."
 sleep 3
 
-# Step 3: Delete ALL related Kafka topics (data + internal state topics)
-print_info "Step 3/4: Cleaning up all Kafka topics and internal state..."
+# Step 3: Delete CDC data topics only (preserve schema history and Connect internal topics)
+print_info "Step 3/4: Cleaning up CDC data topics..."
 ALL_TOPICS=$(docker exec kafka kafka-topics --list --bootstrap-server localhost:9092 2>/dev/null || echo "")
 
 if [ ! -z "$ALL_TOPICS" ]; then
-    # Delete data topics matching our prefix
+    # Delete ONLY data topics (preserve schema-changes and debezium_connect_* topics)
     DATA_TOPICS=$(echo "$ALL_TOPICS" | grep -E "^$TOPIC_PREFIX\." || true)
-    # Delete schema history topics
-    SCHEMA_TOPICS=$(echo "$ALL_TOPICS" | grep -E "schema-changes\.$TOPIC_PREFIX$" || true)
-    # Delete internal Connect topics (these can cause corruption)
-    CONNECT_TOPICS=$(echo "$ALL_TOPICS" | grep -E "^connect-configs|^connect-offsets|^connect-status" || true)
     
-    TOPICS_TO_DELETE=$(echo -e "$DATA_TOPICS\n$SCHEMA_TOPICS\n$CONNECT_TOPICS" | grep -v "^$" || true)
-    
-    if [ ! -z "$TOPICS_TO_DELETE" ]; then
-        print_warning "Deleting topics to ensure clean state:"
-        echo "$TOPICS_TO_DELETE" | while read topic; do
+    if [ ! -z "$DATA_TOPICS" ]; then
+        print_warning "Deleting CDC data topics:"
+        echo "$DATA_TOPICS" | while read topic; do
             if [ ! -z "$topic" ]; then
                 echo "  - Deleting topic: $topic"
                 docker exec kafka kafka-topics --delete --topic "$topic" --bootstrap-server localhost:9092 2>/dev/null || true
             fi
         done
         sleep 5
-        print_success "All topics deleted"
+        print_success "CDC data topics deleted"
     else
-        print_info "No topics to delete"
+        print_info "No CDC data topics to delete"
     fi
+    
+    # Preserving schema history and Debezium Connect internal topics for stability
+    print_info "Preserving schema-changes.* and debezium_connect_* topics"
 else
     print_info "No topics found"
 fi
 
-# Step 4: Restart Debezium Connect to clear in-memory state
-print_info "Step 4/4: Restarting Debezium Connect to clear in-memory state..."
-docker restart debezium-connect > /dev/null 2>&1
-
-print_info "Waiting for Debezium Connect to restart..."
-sleep 10
-wait_for_service "Debezium Connect" 30 2 "curl -s http://localhost:8083/ | grep version"
+# Step 4: Skip Debezium Connect restart to preserve schema history state
+print_info "Step 4/4: Skipping Debezium Connect restart to preserve schema history..."
+sleep 3
 
 print_success "Comprehensive cleanup completed - corruption prevention measures applied"
 print_success "System is now in a clean state for fresh deployment"
@@ -444,15 +437,17 @@ if [ -n "$FIRST_CDC_TABLE" ]; then
     
     # Convert table name to snake_case for PostgreSQL
     PG_TABLE=$(echo "$TABLE" | sed 's/\([A-Z]\)/_\L\1/g' | sed 's/^_//')
-    PG_COUNT=$(docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -t -c "SELECT COUNT(*) FROM ${SCHEMA}.${PG_TABLE};" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    # Use POSTGRES_SCHEMA from environment instead of source schema
+    PG_COUNT=$(docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -t -c "SELECT COUNT(*) FROM ${POSTGRES_SCHEMA}.${PG_TABLE};" 2>/dev/null | tr -d '[:space:]' || echo "0")
     
     echo "  MS SQL ${FIRST_CDC_TABLE}: $MSSQL_COUNT records"
-    echo "  PostgreSQL ${SCHEMA}.${PG_TABLE}: $PG_COUNT records"
+    echo "  PostgreSQL ${POSTGRES_SCHEMA}.${PG_TABLE}: $PG_COUNT records"
     
-    if [ "$PG_COUNT" -gt 0 ]; then
+    # Ensure PG_COUNT is numeric to avoid comparison errors
+    if [[ "$PG_COUNT" =~ ^[0-9]+$ ]] && [ "$PG_COUNT" -gt 0 ]; then
         print_success "✅ Initial snapshot completed successfully!"
         print_info "Sample data from PostgreSQL:"
-        docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "SELECT * FROM ${SCHEMA}.${PG_TABLE} LIMIT 3;" 2>/dev/null || true
+        docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "SELECT * FROM ${POSTGRES_SCHEMA}.${PG_TABLE} LIMIT 3;" 2>/dev/null || true
     else
         print_warning "⚠️  Snapshot may still be in progress or waiting to start"
         print_info "Checking connector status..."
