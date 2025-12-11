@@ -71,12 +71,12 @@ cat > "$CONNECTORS_DIR/postgres-sink.json" <<EOF
     "connection.username": "${POSTGRES_USER}",
     "connection.password": "${POSTGRES_PASSWORD}",
     
-    "topics.regex": "${TOPIC_PREFIX}\\\\.${MSSQL_DATABASE}\\\\.${POSTGRES_SCHEMA}\\\\.(.*)",
+    "topics.regex": "${TOPIC_PREFIX}\\\\.${MSSQL_DATABASE}\\\\.${MSSQL_SCHEMA}\\\\.(.*)",
     
     "transforms": "route,unwrap,renameDeleted,snakeCaseKey,snakeCaseValue,typeConversion",
     
     "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
-    "transforms.route.regex": "${TOPIC_PREFIX}\\\\.${MSSQL_DATABASE}\\\\.${POSTGRES_SCHEMA}\\\\.(.*)",
+    "transforms.route.regex": "${TOPIC_PREFIX}\\\\.${MSSQL_DATABASE}\\\\.${MSSQL_SCHEMA}\\\\.(.*)",
     "transforms.route.replacement": "\$1",
     
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",

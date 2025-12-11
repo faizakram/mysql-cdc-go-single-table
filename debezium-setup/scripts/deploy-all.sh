@@ -327,10 +327,11 @@ if [ ! -z "$ALL_TOPICS" ]; then
     # Delete internal Connect topics (these can cause corruption)
     CONNECT_TOPICS=$(echo "$ALL_TOPICS" | grep -E "^connect-configs|^connect-offsets|^connect-status" || true)
     
-    TOPICS_TO_DELETE=$(echo -e "$DATA_TOPICS\n$SCHEMA_TOPICS\n$CONNECT_TOPICS" | grep -v "^$" || true)
+    # Only delete DATA topics, NEVER delete schema-changes or Debezium internal topics
+    TOPICS_TO_DELETE=$(echo "$DATA_TOPICS" | grep -v "^$" || true)
     
     if [ ! -z "$TOPICS_TO_DELETE" ]; then
-        print_warning "Deleting topics to ensure clean state:"
+        print_warning "Deleting data topics only (preserving schema history and internal topics):"
         echo "$TOPICS_TO_DELETE" | while read topic; do
             if [ ! -z "$topic" ]; then
                 echo "  - Deleting topic: $topic"
@@ -338,33 +339,111 @@ if [ ! -z "$ALL_TOPICS" ]; then
             fi
         done
         sleep 5
-        print_success "All topics deleted"
+        print_success "Data topics deleted"
     else
-        print_info "No topics to delete"
+        print_info "No data topics to delete"
     fi
 else
     print_info "No topics found"
 fi
 
-# Step 4: Restart Debezium Connect to clear in-memory state
-print_info "Step 4/4: Restarting Debezium Connect to clear in-memory state..."
+# Step 4: Ensure schema history topic exists with correct configuration
+print_info "Step 4/4: Ensuring schema history topic is properly configured..."
+
+# Check if schema-changes topic exists and has correct cleanup policy
+SCHEMA_TOPIC_EXISTS=$(docker exec kafka kafka-topics --list --bootstrap-server localhost:9092 2>/dev/null | grep "^schema-changes.mssql$" || echo "")
+
+if [ -z "$SCHEMA_TOPIC_EXISTS" ]; then
+    print_info "Creating schema-changes.mssql topic with cleanup.policy=compact..."
+    docker exec kafka kafka-topics --create \
+        --topic schema-changes.mssql \
+        --partitions 1 \
+        --replication-factor 1 \
+        --config cleanup.policy=compact \
+        --bootstrap-server localhost:9092 2>/dev/null
+    print_success "Schema history topic created"
+else
+    # Check if it has the correct cleanup policy
+    CLEANUP_POLICY=$(docker exec kafka kafka-topics --describe --topic schema-changes.mssql --bootstrap-server localhost:9092 2>/dev/null | grep "cleanup.policy" | grep -o "cleanup.policy=[^,]*" | cut -d'=' -f2)
+    
+    if [ "$CLEANUP_POLICY" != "compact" ]; then
+        print_warning "Schema history topic has wrong cleanup policy ($CLEANUP_POLICY), recreating..."
+        docker exec kafka kafka-topics --delete --topic schema-changes.mssql --bootstrap-server localhost:9092 2>/dev/null
+        sleep 3
+        docker exec kafka kafka-topics --create \
+            --topic schema-changes.mssql \
+            --partitions 1 \
+            --replication-factor 1 \
+            --config cleanup.policy=compact \
+            --bootstrap-server localhost:9092 2>/dev/null
+        print_success "Schema history topic recreated with correct policy"
+    else
+        print_success "Schema history topic already exists with correct configuration"
+    fi
+fi
+
+# Restart Debezium Connect to clear in-memory state
+print_info "Restarting Debezium Connect to clear cached state..."
 docker restart debezium-connect > /dev/null 2>&1
 
 print_info "Waiting for Debezium Connect to restart..."
-sleep 10
+sleep 15
 wait_for_service "Debezium Connect" 30 2 "curl -s http://localhost:8083/ | grep version"
 
-print_success "Comprehensive cleanup completed - corruption prevention measures applied"
-print_success "System is now in a clean state for fresh deployment"
+print_success "Comprehensive cleanup completed - schema history properly configured"
+print_success "System is now ready for connector deployment"
 
-# Deploy source connector
-print_info "Deploying MS SQL source connector ($SOURCE_CONNECTOR_NAME)..."
-curl -X POST -H "Content-Type: application/json" --data @connectors/mssql-source.json http://localhost:8083/connectors
-sleep 5
+# Check if schema history needs initialization (is it empty?)
+SCHEMA_HISTORY_MESSAGES=$(docker exec kafka kafka-console-consumer --topic schema-changes.mssql --from-beginning --max-messages 1 --timeout-ms 3000 --bootstrap-server localhost:9092 2>&1 | grep -c "Processed a total of 0 messages" || echo "0")
+
+if [ "$SCHEMA_HISTORY_MESSAGES" != "0" ]; then
+    print_warning "Schema history topic is empty - this is first deployment"
+    print_info "SQL Server connector requires schema history to exist before starting"
+    print_info "Deploying connector with snapshot.mode=initial (will capture schema on first run)..."
+    
+    # Deploy source connector with initial mode (it will fail first time, but populate schema history)
+    curl -X POST -H "Content-Type: application/json" --data @connectors/mssql-source.json http://localhost:8083/connectors > /dev/null 2>&1
+    
+    # Wait and check status
+    print_info "Waiting for connector to start (30 seconds)..."
+    sleep 30
+    
+    # Check connector status
+    CONNECTOR_STATE=$(curl -s http://localhost:8083/connectors/$SOURCE_CONNECTOR_NAME/status 2>/dev/null | jq -r '.tasks[0].state' 2>/dev/null || echo "UNKNOWN")
+    
+    if [ "$CONNECTOR_STATE" = "RUNNING" ]; then
+        print_success "Connector started successfully on first attempt!"
+    else
+        print_warning "Connector state: $CONNECTOR_STATE (expected on first run)"
+        print_info "The connector needs to be restarted after schema history is initialized"
+        print_info "Restarting connector..."
+        
+        # Restart the connector task
+        curl -X POST http://localhost:8083/connectors/$SOURCE_CONNECTOR_NAME/restart 2>/dev/null > /dev/null
+        sleep 20
+        
+        # Check again
+        CONNECTOR_STATE=$(curl -s http://localhost:8083/connectors/$SOURCE_CONNECTOR_NAME/status 2>/dev/null | jq -r '.tasks[0].state' 2>/dev/null || echo "UNKNOWN")
+        
+        if [ "$CONNECTOR_STATE" = "RUNNING" ]; then
+            print_success "Connector started successfully after restart!"
+        else
+            print_warning "Connector state after restart: $CONNECTOR_STATE"
+            print_info "You may need to restart it manually: curl -X POST http://localhost:8083/connectors/$SOURCE_CONNECTOR_NAME/restart"
+        fi
+    fi
+else
+    print_info "Schema history already populated - deploying directly"
+    
+    # Deploy source connector
+    print_info "Deploying MS SQL source connector ($SOURCE_CONNECTOR_NAME)..."
+    curl -X POST -H "Content-Type: application/json" --data @connectors/mssql-source.json http://localhost:8083/connectors > /dev/null 2>&1
+    sleep 5
+fi
 
 # Deploy sink connector
 print_info "Deploying PostgreSQL sink connector ($SINK_CONNECTOR_NAME)..."
-curl -X POST -H "Content-Type: application/json" --data @connectors/postgres-sink.json http://localhost:8083/connectors
+curl -X POST -H "Content-Type: application/json" --data @connectors/postgres-sink.json http://localhost:8083/connectors > /dev/null 2>&1
 sleep 5
 
 print_success "Connectors deployed"

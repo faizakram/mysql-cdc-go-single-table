@@ -44,6 +44,10 @@ POSTGRES_CONFIG = {
     'password': os.getenv('POSTGRES_PASSWORD', 'postgres')
 }
 
+# Schema names from environment variables
+MSSQL_SCHEMA = os.getenv('MSSQL_SCHEMA', 'dbo')
+POSTGRES_SCHEMA = os.getenv('POSTGRES_SCHEMA', 'dbo')
+
 # Type mapping: MS SQL → PostgreSQL
 TYPE_MAPPING = {
     # Integer types
@@ -145,7 +149,7 @@ def get_mssql_schema(mssql_conn, table_name):
     ORDER BY c.column_id
     """
     
-    cursor.execute(query, (f'dbo.{table_name}',))
+    cursor.execute(query, (f'{MSSQL_SCHEMA}.{table_name}',))
     return cursor.fetchall()
 
 def convert_type(data_type, max_length, precision, scale):
@@ -205,7 +209,7 @@ def create_postgres_table(pg_conn, table_name, schema):
     columns.append("__cdc_deleted TEXT DEFAULT 'false'")
     
     # Build full CREATE TABLE statement
-    create_sql = f"CREATE TABLE IF NOT EXISTS dbo.{pg_table_name} (\n    "
+    create_sql = f"CREATE TABLE IF NOT EXISTS {POSTGRES_SCHEMA}.{pg_table_name} (\n    "
     create_sql += ",\n    ".join(columns)
     
     if pk_columns:
@@ -213,12 +217,12 @@ def create_postgres_table(pg_conn, table_name, schema):
     
     create_sql += "\n);"
     
-    print(f"\n📋 Creating table: dbo.{pg_table_name}")
+    print(f"\n📋 Creating table: {POSTGRES_SCHEMA}.{pg_table_name}")
     print(f"   Columns: {len(schema)}")
     print(f"   Primary Keys: {', '.join(pk_columns) if pk_columns else 'None'}")
     
     try:
-        cursor.execute(f"DROP TABLE IF EXISTS dbo.{pg_table_name} CASCADE")
+        cursor.execute(f"DROP TABLE IF EXISTS {POSTGRES_SCHEMA}.{pg_table_name} CASCADE")
         cursor.execute(create_sql)
         pg_conn.commit()
         print(f"   ✅ Created successfully")
@@ -270,9 +274,9 @@ def main():
     if not tables:
         # Fallback: get all user tables
         cursor = mssql_conn.cursor()
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT name FROM sys.tables 
-            WHERE schema_id = SCHEMA_ID('dbo')
+            WHERE schema_id = SCHEMA_ID('{MSSQL_SCHEMA}')
             AND is_ms_shipped = 0
             ORDER BY name
         """)
