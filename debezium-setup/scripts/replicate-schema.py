@@ -220,6 +220,30 @@ def to_snake_case(name):
     name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name)
     return name.lower()
 
+# PostgreSQL reserved keywords that need to be quoted
+POSTGRES_RESERVED_KEYWORDS = {
+    'all', 'analyse', 'analyze', 'and', 'any', 'array', 'as', 'asc', 'asymmetric',
+    'authorization', 'between', 'binary', 'both', 'case', 'cast', 'check', 'collate',
+    'collation', 'column', 'concurrently', 'constraint', 'create', 'cross',
+    'current_catalog', 'current_date', 'current_role', 'current_schema',
+    'current_time', 'current_timestamp', 'current_user', 'default', 'deferrable',
+    'desc', 'distinct', 'do', 'else', 'end', 'except', 'false', 'fetch', 'for',
+    'foreign', 'freeze', 'from', 'full', 'grant', 'group', 'having', 'ilike', 'in',
+    'initially', 'inner', 'intersect', 'into', 'is', 'isnull', 'join', 'lateral',
+    'leading', 'left', 'like', 'limit', 'localtime', 'localtimestamp', 'natural',
+    'not', 'notnull', 'null', 'offset', 'on', 'only', 'or', 'order', 'outer',
+    'overlaps', 'placing', 'primary', 'references', 'returning', 'right', 'select',
+    'session_user', 'similar', 'some', 'symmetric', 'table', 'tablesample', 'then',
+    'to', 'trailing', 'true', 'union', 'unique', 'user', 'using', 'variadic',
+    'verbose', 'when', 'where', 'window', 'with'
+}
+
+def quote_identifier(name):
+    """Quote identifier if it's a PostgreSQL reserved keyword"""
+    if name.lower() in POSTGRES_RESERVED_KEYWORDS:
+        return f'"{name}"'
+    return name
+
 def create_postgres_table(pg_conn, table_name, schema):
     """Create PostgreSQL table from MS SQL schema"""
     cursor = pg_conn.cursor()
@@ -242,11 +266,13 @@ def create_postgres_table(pg_conn, table_name, schema):
         
         pg_type = convert_type(data_type, max_length, precision, scale)
         
-        col_def = f"{col_name} {pg_type}"
+        # Quote column name if it's a reserved keyword
+        quoted_col_name = quote_identifier(col_name)
+        col_def = f"{quoted_col_name} {pg_type}"
         
         if is_pk:
             col_def += " NOT NULL"
-            pk_columns.append(col_name)
+            pk_columns.append(quoted_col_name)
         elif not is_nullable:
             col_def += " NOT NULL"
         

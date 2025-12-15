@@ -74,6 +74,30 @@ def camel_to_snake(name):
     # Insert underscore before uppercase letters preceded by lowercase letters
     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
+# PostgreSQL reserved keywords that need to be quoted
+POSTGRES_RESERVED_KEYWORDS = {
+    'all', 'analyse', 'analyze', 'and', 'any', 'array', 'as', 'asc', 'asymmetric',
+    'authorization', 'between', 'binary', 'both', 'case', 'cast', 'check', 'collate',
+    'collation', 'column', 'concurrently', 'constraint', 'create', 'cross',
+    'current_catalog', 'current_date', 'current_role', 'current_schema',
+    'current_time', 'current_timestamp', 'current_user', 'default', 'deferrable',
+    'desc', 'distinct', 'do', 'else', 'end', 'except', 'false', 'fetch', 'for',
+    'foreign', 'freeze', 'from', 'full', 'grant', 'group', 'having', 'ilike', 'in',
+    'initially', 'inner', 'intersect', 'into', 'is', 'isnull', 'join', 'lateral',
+    'leading', 'left', 'like', 'limit', 'localtime', 'localtimestamp', 'natural',
+    'not', 'notnull', 'null', 'offset', 'on', 'only', 'or', 'order', 'outer',
+    'overlaps', 'placing', 'primary', 'references', 'returning', 'right', 'select',
+    'session_user', 'similar', 'some', 'symmetric', 'table', 'tablesample', 'then',
+    'to', 'trailing', 'true', 'union', 'unique', 'user', 'using', 'variadic',
+    'verbose', 'when', 'where', 'window', 'with'
+}
+
+def quote_identifier(name):
+    """Quote identifier if it's a PostgreSQL reserved keyword"""
+    if name.lower() in POSTGRES_RESERVED_KEYWORDS:
+        return f'"{name}"'
+    return name
+
 def connect_mssql():
     """Connect to MS SQL Server with automatic driver detection"""
     # List of drivers to try in order of preference
@@ -219,6 +243,7 @@ def sync_table_data(mssql_conn, postgres_conn, schema, table, columns):
     # Get source column names
     source_columns = [col['name'] for col in columns]
     target_columns = [camel_to_snake(col['name']) for col in columns]
+    target_columns_quoted = [quote_identifier(col) for col in target_columns]
     
     # Build SELECT query for MS SQL - convert datetimeoffset to string
     select_columns = []
@@ -233,10 +258,10 @@ def sync_table_data(mssql_conn, postgres_conn, schema, table, columns):
     FROM [{schema}].[{table}]
     """
     
-    # Build INSERT query for PostgreSQL
-    placeholders = ', '.join(['%s'] * len(target_columns))
+    # Build INSERT query for PostgreSQL with quoted identifiers
+    placeholders = ', '.join(['%s'] * len(target_columns_quoted))
     insert_query = f"""
-    INSERT INTO {pg_full_table} ({', '.join(target_columns)})
+    INSERT INTO {pg_full_table} ({', '.join(target_columns_quoted)})
     VALUES ({placeholders})
     """
     
