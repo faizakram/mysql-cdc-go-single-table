@@ -52,7 +52,8 @@ POSTGRES_CONFIG = {
     'password': os.getenv('POSTGRES_PASSWORD', 'postgres')
 }
 
-# Target schema configuration
+# Schema configuration
+MSSQL_SCHEMA = os.getenv('MSSQL_SCHEMA', 'dbo')
 POSTGRES_SCHEMA = os.getenv('POSTGRES_SCHEMA', 'dbo')
 
 # Type mapping: MS SQL → PostgreSQL
@@ -279,16 +280,28 @@ def create_postgres_table(pg_conn, table_name, schema):
         return False
 
 def get_cdc_enabled_tables(conn):
-    """Get list of CDC-enabled tables"""
+    """Get list of CDC-enabled tables (returns empty list if CDC not enabled)"""
     cursor = conn.cursor()
-    query = """
-    SELECT DISTINCT
-        OBJECT_NAME(ct.source_object_id) AS table_name
-    FROM cdc.change_tables ct
-    WHERE ct.source_object_id IS NOT NULL
-    """
-    cursor.execute(query)
-    return [row.table_name for row in cursor.fetchall()]
+    try:
+        # Check if CDC is enabled on database
+        cursor.execute("SELECT is_cdc_enabled FROM sys.databases WHERE name = DB_NAME()")
+        result = cursor.fetchone()
+        if not result or not result[0]:
+            # CDC not enabled, return empty list
+            return []
+        
+        # Get CDC-enabled tables
+        query = """
+        SELECT DISTINCT
+            OBJECT_NAME(ct.source_object_id) AS table_name
+        FROM cdc.change_tables ct
+        WHERE ct.source_object_id IS NOT NULL
+        """
+        cursor.execute(query)
+        return [row.table_name for row in cursor.fetchall()]
+    except pyodbc.Error:
+        # If any error (e.g., cdc schema doesn't exist), return empty list
+        return []
 
 def main():
     print("=" * 80)
@@ -314,21 +327,24 @@ def main():
         sys.exit(1)
     
     # Get CDC-enabled tables
-    print("\n📊 Finding CDC-enabled tables...")
+    print("\n📊 Finding tables to replicate...")
     tables = get_cdc_enabled_tables(mssql_conn)
     
     if not tables:
-        # Fallback: get all user tables
+        # Fallback: get all user tables from the source schema
+        print("   ℹ️  CDC not enabled, using all tables from source schema")
+        mssql_schema = os.getenv('MSSQL_SCHEMA', 'dbo')
         cursor = mssql_conn.cursor()
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT name FROM sys.tables 
-            WHERE schema_id = SCHEMA_ID('dbo')
+            WHERE schema_id = SCHEMA_ID('{mssql_schema}')
             AND is_ms_shipped = 0
             ORDER BY name
         """)
         tables = [row.name for row in cursor.fetchall()]
-    
-    print(f"   Found {len(tables)} tables: {', '.join(tables)}")
+        print(f"   Found {len(tables)} tables in schema '{mssql_schema}': {', '.join(tables)}")
+    else:
+        print(f"   Found {len(tables)} CDC-enabled tables: {', '.join(tables)}")
     
     # Replicate each table
     print("\n🔄 Replicating table schemas...")
