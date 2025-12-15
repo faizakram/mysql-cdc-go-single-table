@@ -41,7 +41,7 @@ MSSQL_CONFIG = {
     'database': os.getenv('MSSQL_DATABASE', 'Employees'),
     'username': os.getenv('MSSQL_USER', 'sa'),
     'password': os.getenv('MSSQL_PASSWORD', 'YourStrong@Passw0rd'),
-    'driver': '{ODBC Driver 18 for SQL Server}',
+    'driver': os.getenv('MSSQL_DRIVER', '{ODBC Driver 18 for SQL Server}'),
     'TrustServerCertificate': 'yes'
 }
 
@@ -75,20 +75,55 @@ def camel_to_snake(name):
     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
 def connect_mssql():
-    """Connect to MS SQL Server"""
-    conn_str = (
-        f"DRIVER={MSSQL_CONFIG['driver']};"
-        f"SERVER={MSSQL_CONFIG['server']};"
-        f"DATABASE={MSSQL_CONFIG['database']};"
-        f"UID={MSSQL_CONFIG['username']};"
-        f"PWD={MSSQL_CONFIG['password']};"
-        f"TrustServerCertificate={MSSQL_CONFIG['TrustServerCertificate']};"
-    )
+    """Connect to MS SQL Server with automatic driver detection"""
+    # List of drivers to try in order of preference
+    drivers = [
+        MSSQL_CONFIG['driver'],  # User-specified or default from env
+        '{ODBC Driver 18 for SQL Server}',
+        '{ODBC Driver 17 for SQL Server}',
+        '{ODBC Driver 13 for SQL Server}',
+        '{SQL Server Native Client 11.0}',
+        '{SQL Server}'
+    ]
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    drivers = [x for x in drivers if not (x in seen or seen.add(x))]
+    
+    last_error = None
+    for driver in drivers:
+        conn_str = (
+            f"DRIVER={driver};"
+            f"SERVER={MSSQL_CONFIG['server']};"
+            f"DATABASE={MSSQL_CONFIG['database']};"
+            f"UID={MSSQL_CONFIG['username']};"
+            f"PWD={MSSQL_CONFIG['password']};"
+            f"TrustServerCertificate={MSSQL_CONFIG['TrustServerCertificate']};"
+        )
+        try:
+            conn = pyodbc.connect(conn_str, timeout=10)
+            # Connection successful
+            if driver != MSSQL_CONFIG['driver']:
+                print(f"ℹ️  Connected using driver: {driver}")
+            return conn
+        except pyodbc.Error as e:
+            last_error = e
+            # Driver not found or other error, try next driver
+            continue
+    
+    # If we get here, all drivers failed
+    print(f"❌ Failed to connect to MS SQL: {last_error}")
+    print(f"\n💡 Available ODBC drivers on this system:")
     try:
-        return pyodbc.connect(conn_str, timeout=10)
-    except Exception as e:
-        print(f"❌ Failed to connect to MS SQL: {e}")
-        sys.exit(1)
+        available_drivers = pyodbc.drivers()
+        for drv in available_drivers:
+            print(f"   • {drv}")
+        print(f"\n📥 Install Microsoft ODBC Driver for SQL Server:")
+        print(f"   Windows: https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server")
+        print(f"   Linux: sudo apt-get install msodbcsql18 or sudo yum install msodbcsql18")
+    except:
+        pass
+    sys.exit(1)
 
 def connect_postgres():
     """Connect to PostgreSQL"""
