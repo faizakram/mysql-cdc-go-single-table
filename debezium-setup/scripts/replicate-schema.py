@@ -27,17 +27,25 @@ def load_env():
 load_env()
 
 # Configuration from environment variables
+MSSQL_HOST = os.getenv('MSSQL_HOST', 'localhost')
+if MSSQL_HOST == 'host.docker.internal':
+    MSSQL_HOST = 'localhost'
+
 MSSQL_CONFIG = {
-    'server': f"localhost,{os.getenv('MSSQL_PORT', '1433')}",
+    'server': f"{MSSQL_HOST},{os.getenv('MSSQL_PORT', '1433')}",
     'database': os.getenv('MSSQL_DATABASE', 'Employees'),
     'username': os.getenv('MSSQL_USER', 'sa'),
     'password': os.getenv('MSSQL_PASSWORD', 'YourStrong@Passw0rd'),
-    'driver': '{ODBC Driver 18 for SQL Server}',
+    'driver': os.getenv('MSSQL_DRIVER', '{ODBC Driver 18 for SQL Server}'),
     'TrustServerCertificate': 'yes'
 }
 
+POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'localhost')
+if POSTGRES_HOST == 'host.docker.internal':
+    POSTGRES_HOST = 'localhost'
+
 POSTGRES_CONFIG = {
-    'host': 'localhost',
+    'host': POSTGRES_HOST,
     'port': int(os.getenv('POSTGRES_PORT', '5432')),
     'database': os.getenv('POSTGRES_DATABASE', 'target_db'),
     'user': os.getenv('POSTGRES_USER', 'postgres'),
@@ -99,16 +107,55 @@ TYPE_MAPPING = {
 }
 
 def connect_mssql():
-    """Connect to MS SQL Server"""
-    conn_str = (
-        f"DRIVER={MSSQL_CONFIG['driver']};"
-        f"SERVER={MSSQL_CONFIG['server']};"
-        f"DATABASE={MSSQL_CONFIG['database']};"
-        f"UID={MSSQL_CONFIG['username']};"
-        f"PWD={MSSQL_CONFIG['password']};"
-        f"TrustServerCertificate={MSSQL_CONFIG['TrustServerCertificate']};"
-    )
-    return pyodbc.connect(conn_str)
+    """Connect to MS SQL Server with automatic driver detection"""
+    # List of drivers to try in order of preference
+    drivers = [
+        MSSQL_CONFIG['driver'],  # User-specified or default from env
+        '{ODBC Driver 18 for SQL Server}',
+        '{ODBC Driver 17 for SQL Server}',
+        '{ODBC Driver 13 for SQL Server}',
+        '{SQL Server Native Client 11.0}',
+        '{SQL Server}'
+    ]
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    drivers = [x for x in drivers if not (x in seen or seen.add(x))]
+    
+    last_error = None
+    for driver in drivers:
+        conn_str = (
+            f"DRIVER={driver};"
+            f"SERVER={MSSQL_CONFIG['server']};"
+            f"DATABASE={MSSQL_CONFIG['database']};"
+            f"UID={MSSQL_CONFIG['username']};"
+            f"PWD={MSSQL_CONFIG['password']};"
+            f"TrustServerCertificate={MSSQL_CONFIG['TrustServerCertificate']};"
+        )
+        try:
+            conn = pyodbc.connect(conn_str, timeout=10)
+            # Connection successful
+            if driver != MSSQL_CONFIG['driver']:
+                print(f"   ℹ️  Using ODBC driver: {driver}")
+            return conn
+        except pyodbc.Error as e:
+            last_error = e
+            # Driver not found or other error, try next driver
+            continue
+    
+    # If we get here, all drivers failed
+    print(f"❌ Failed to connect to MS SQL: {last_error}")
+    print(f"\n💡 Available ODBC drivers on this system:")
+    try:
+        available_drivers = pyodbc.drivers()
+        for drv in available_drivers:
+            print(f"   • {drv}")
+        print(f"\n📥 Install Microsoft ODBC Driver for SQL Server:")
+        print(f"   Windows: https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server")
+        print(f"   Linux: sudo apt-get install msodbcsql18 or sudo yum install msodbcsql18")
+    except:
+        pass
+    sys.exit(1)
 
 def connect_postgres():
     """Connect to PostgreSQL"""
