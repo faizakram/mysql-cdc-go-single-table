@@ -34,3 +34,6 @@ data/
 # Temporary files
 /tmp/
 debezium-setup/custom-smt/target/*
+
+# Progress tracking files
+*_progress.json

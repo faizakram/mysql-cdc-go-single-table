@@ -4,6 +4,7 @@
 Full-Load Data Synchronization Script
 Direct MS SQL → PostgreSQL replication with transformations
 Supports snake_case, UUID, and JSON conversions
+Supports resume from failure point with truncate for partial tables
 """
 
 import pyodbc
@@ -12,9 +13,11 @@ from psycopg2.extras import execute_batch
 import sys
 import os
 import re
+import argparse
 from pathlib import Path
 from datetime import datetime
 import json
+from progress import ProgressTracker
 
 # Load environment variables from .env file
 def load_env():
@@ -232,11 +235,15 @@ def transform_value(value, column_name, data_type):
     
     return value
 
-def sync_table_data(mssql_conn, postgres_conn, schema, table, columns):
+def sync_table_data(mssql_conn, postgres_conn, schema, table, columns, progress_tracker=None, truncate_partial=True):
     """Sync data from MS SQL table to PostgreSQL"""
     table_full_name = f"{schema}.{table}"
     pg_table_name = camel_to_snake(table)
     pg_full_table = f"{POSTGRES_SCHEMA}.{pg_table_name}"
+    
+    # Mark as started
+    if progress_tracker:
+        progress_tracker.mark_table_started(table, "data")
     
     print(f"\n📊 Syncing {table_full_name} → {pg_full_table}")
     
@@ -314,15 +321,58 @@ def sync_table_data(mssql_conn, postgres_conn, schema, table, columns):
         pg_cursor.close()
         
         print(f"  ✅ {rows_synced} rows synced successfully")
+        if progress_tracker:
+            progress_tracker.mark_table_completed(table, "data", rows_synced)
         return rows_synced
         
     except Exception as e:
-        print(f"  ❌ Error syncing {table_full_name}: {e}")
+        error_msg = str(e)
+        print(f"  ❌ Error syncing {table_full_name}: {error_msg}")
         postgres_conn.rollback()
+        if progress_tracker:
+            progress_tracker.mark_table_failed(table, "data", error_msg)
         return 0
 
 def main():
     """Main synchronization process"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='Sync MS SQL data to PostgreSQL with resume capability',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Normal run (syncs all tables)
+  python sync-data.py
+  
+  # Resume from last failure (truncates partial tables)
+  python sync-data.py --resume
+  
+  # Start from specific table
+  python sync-data.py --start-from-table Orders
+  
+  # Resume without truncating partial tables
+  python sync-data.py --resume --no-truncate
+  
+  # Reset progress and start fresh
+  python sync-data.py --reset
+        """)
+    parser.add_argument('--resume', action='store_true',
+                       help='Resume from last failed/incomplete table (truncates partial data)')
+    parser.add_argument('--start-from-table', type=str, metavar='TABLE',
+                       help='Start processing from specific table (skips previous tables)')
+    parser.add_argument('--no-truncate', action='store_true',
+                       help='Do not truncate partial tables when resuming')
+    parser.add_argument('--reset', action='store_true',
+                       help='Reset progress and start fresh')
+    args = parser.parse_args()
+    
+    # Initialize progress tracker
+    progress_tracker = ProgressTracker("data_sync_progress.json")
+    
+    if args.reset:
+        progress_tracker.reset_progress()
+        return
+    
     print("=" * 60)
     print("MS SQL → PostgreSQL Full-Load Data Synchronization")
     print("=" * 60)
@@ -354,46 +404,109 @@ def main():
     for schema, table in tables:
         print(f"   • {schema}.{table}")
     
+    # Display progress
+    progress_tracker.display_progress("data", len(tables))
+    
+    # Determine starting point
+    start_index = 0
+    table_names = [table for schema, table in tables]
+    
+    if args.resume:
+        last_failed = progress_tracker.get_last_failed_table("data")
+        if last_failed and last_failed in table_names:
+            start_index = table_names.index(last_failed)
+            print(f"📍 Resuming from last failure point: {last_failed} (table {start_index + 1}/{len(tables)})")
+            
+            # Check if partial data exists and truncate if needed
+            if not args.no_truncate and progress_tracker.is_table_partial(last_failed, "data"):
+                print(f"⚠️  Table {last_failed} has partial data - will truncate before re-sync\n")
+        else:
+            print("✅ No failed tables found, processing remaining tables\n")
+    elif args.start_from_table:
+        if args.start_from_table in table_names:
+            start_index = table_names.index(args.start_from_table)
+            print(f"📍 Starting from specified table: {args.start_from_table} (table {start_index + 1}/{len(tables)})\n")
+        else:
+            print(f"⚠️  Warning: Table '{args.start_from_table}' not found in table list")
+            print(f"Available tables: {', '.join(table_names)}")
+            sys.exit(1)
+    
     # Sync each table
     start_time = datetime.now()
     total_rows = 0
     successful_tables = 0
+    skipped_count = 0
     
     print("\n🔄 Starting synchronization...")
     
-    for schema, table in tables:
+    for idx, (schema, table) in enumerate(tables, 1):
+        # Skip tables before start_index
+        if idx - 1 < start_index:
+            skipped_count += 1
+            continue
+        
+        # Skip if already completed (unless --resume flag used)
+        if not args.resume and progress_tracker.is_table_completed(table, "data"):
+            status = progress_tracker.get_table_status(table, "data")
+            print(f"⏭️  Skipping {schema}.{table} (already completed) [{idx}/{len(tables)}]")
+            skipped_count += 1
+            continue
+        
+        print(f"\n[{idx}/{len(tables)}] Processing: {schema}.{table}")
+        
         try:
             columns = get_table_columns(mssql_conn, schema, table)
-            rows = sync_table_data(mssql_conn, postgres_conn, schema, table, columns)
+            rows = sync_table_data(mssql_conn, postgres_conn, schema, table, columns, 
+                                 progress_tracker, truncate_partial=not args.no_truncate)
             total_rows += rows
             if rows >= 0:
                 successful_tables += 1
         except Exception as e:
             print(f"❌ Failed to sync {schema}.{table}: {e}")
+            if progress_tracker:
+                progress_tracker.mark_table_failed(table, "data", str(e))
+        
+        # Show progress periodically
+        if idx % 10 == 0:
+            progress_tracker.display_progress("data", len(tables))
     
     # Close connections
     mssql_conn.close()
     postgres_conn.close()
     
+    # Final progress display
+    progress_tracker.display_progress("data", len(tables))
+    
     # Summary
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
     
+    # Calculate actual processed and failed counts
+    actually_processed = successful_tables
+    failed_tables = len(tables) - successful_tables - skipped_count
+    
     print("\n" + "=" * 60)
     print("📊 Synchronization Summary")
     print("=" * 60)
-    print(f"✅ Successful tables: {successful_tables}/{len(tables)}")
+    print(f"Total tables: {len(tables)}")
+    print(f"✅ Processed successfully: {actually_processed}")
+    print(f"⏭️  Skipped (already done): {skipped_count}")
+    print(f"❌ Failed: {failed_tables}")
     print(f"📝 Total rows synced: {total_rows:,}")
     print(f"⏱️  Duration: {duration:.2f} seconds")
-    if duration > 0:
+    if duration > 0 and total_rows > 0:
         print(f"⚡ Throughput: {total_rows/duration:.0f} rows/second")
     print("=" * 60)
     
-    if successful_tables == len(tables):
-        print("✅ All tables synchronized successfully!")
+    if successful_tables + skipped_count == len(tables):
+        if skipped_count > 0:
+            print(f"✅ All tables complete ({actually_processed} synced, {skipped_count} already done)")
+        else:
+            print("✅ All tables synchronized successfully!")
         sys.exit(0)
     else:
-        print(f"⚠️  {len(tables) - successful_tables} tables failed to sync")
+        print(f"⚠️  {failed_tables} tables failed to sync")
+        print(f"💡 Use --resume to continue from failure point")
         sys.exit(1)
 
 if __name__ == "__main__":

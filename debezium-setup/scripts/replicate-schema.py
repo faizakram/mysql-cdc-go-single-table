@@ -4,6 +4,7 @@
 Dynamic Schema Replication Script
 Automatically reads MS SQL schema and creates equivalent PostgreSQL tables
 No manual intervention needed - fully dynamic!
+Supports resume from failure point and manual table selection
 """
 
 import pyodbc
@@ -11,7 +12,9 @@ import psycopg2
 import sys
 import time
 import os
+import argparse
 from pathlib import Path
+from progress import ProgressTracker
 
 # Load environment variables from .env file
 def load_env():
@@ -244,9 +247,13 @@ def quote_identifier(name):
         return f'"{name}"'
     return name
 
-def create_postgres_table(pg_conn, table_name, schema):
+def create_postgres_table(pg_conn, table_name, schema, progress_tracker=None):
     """Create PostgreSQL table from MS SQL schema"""
     cursor = pg_conn.cursor()
+    
+    # Mark as started
+    if progress_tracker:
+        progress_tracker.mark_table_started(table_name, "schema")
     
     # Convert table name to snake_case
     pg_table_name = to_snake_case(table_name)
@@ -299,10 +306,15 @@ def create_postgres_table(pg_conn, table_name, schema):
         cursor.execute(create_sql)
         pg_conn.commit()
         print(f"   ✅ Created successfully")
+        if progress_tracker:
+            progress_tracker.mark_table_completed(table_name, "schema")
         return True
     except Exception as e:
-        print(f"   ❌ Error: {str(e)}")
+        error_msg = str(e)
+        print(f"   ❌ Error: {error_msg}")
         pg_conn.rollback()
+        if progress_tracker:
+            progress_tracker.mark_table_failed(table_name, "schema", error_msg)
         return False
 
 def get_cdc_enabled_tables(conn):
@@ -330,6 +342,39 @@ def get_cdc_enabled_tables(conn):
         return []
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='Replicate MS SQL schema to PostgreSQL with resume capability',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Normal run (starts from beginning or resumes automatically)
+  python replicate-schema.py
+  
+  # Resume from last failure point
+  python replicate-schema.py --resume
+  
+  # Start from specific table (skips previous tables)
+  python replicate-schema.py --start-from-table Orders
+  
+  # Reset progress and start fresh
+  python replicate-schema.py --reset
+        """)
+    parser.add_argument('--resume', action='store_true', 
+                       help='Resume from last failed/incomplete table')
+    parser.add_argument('--start-from-table', type=str, metavar='TABLE',
+                       help='Start processing from specific table (skips previous tables)')
+    parser.add_argument('--reset', action='store_true',
+                       help='Reset progress and start fresh')
+    args = parser.parse_args()
+    
+    # Initialize progress tracker
+    progress_tracker = ProgressTracker("schema_replication_progress.json")
+    
+    if args.reset:
+        progress_tracker.reset_progress()
+        return
+    
     print("=" * 80)
     print("Dynamic Schema Replication - MS SQL → PostgreSQL")
     print("=" * 80)
@@ -372,22 +417,64 @@ def main():
     else:
         print(f"   Found {len(tables)} CDC-enabled tables: {', '.join(tables)}")
     
+    # Display progress
+    progress_tracker.display_progress("schema", len(tables))
+    
+    # Determine starting point
+    start_index = 0
+    if args.resume:
+        last_failed = progress_tracker.get_last_failed_table("schema")
+        if last_failed and last_failed in tables:
+            start_index = tables.index(last_failed)
+            print(f"📍 Resuming from last failure point: {last_failed} (table {start_index + 1}/{len(tables)})\n")
+        else:
+            print("✅ No failed tables found, processing remaining tables\n")
+    elif args.start_from_table:
+        if args.start_from_table in tables:
+            start_index = tables.index(args.start_from_table)
+            print(f"📍 Starting from specified table: {args.start_from_table} (table {start_index + 1}/{len(tables)})\n")
+        else:
+            print(f"⚠️  Warning: Table '{args.start_from_table}' not found in table list")
+            print(f"Available tables: {', '.join(tables)}")
+            sys.exit(1)
+    
     # Replicate each table
     print("\n🔄 Replicating table schemas...")
     success_count = 0
+    skipped_count = 0
     
-    for table in tables:
+    for idx, table in enumerate(tables, 1):
+        # Skip tables before start_index
+        if idx - 1 < start_index:
+            skipped_count += 1
+            continue
+        
+        # Skip if already completed (unless --resume flag used)
+        if not args.resume and progress_tracker.is_table_completed(table, "schema"):
+            print(f"⏭️  Skipping {table} (already completed) [{idx}/{len(tables)}]")
+            success_count += 1
+            skipped_count += 1
+            continue
+        
+        print(f"\n[{idx}/{len(tables)}] Processing: {table}")
         schema = get_mssql_schema(mssql_conn, table)
         if schema:
-            if create_postgres_table(pg_conn, table, schema):
+            if create_postgres_table(pg_conn, table, schema, progress_tracker):
                 success_count += 1
+        
+        # Show progress periodically
+        if idx % 10 == 0:
+            progress_tracker.display_progress("schema", len(tables))
     
     # Summary
+    progress_tracker.display_progress("schema", len(tables))
+    
     print("\n" + "=" * 80)
     print(f"✅ Schema replication complete!")
-    print(f"   Tables processed: {len(tables)}")
+    print(f"   Total tables: {len(tables)}")
     print(f"   Successful: {success_count}")
-    print(f"   Failed: {len(tables) - success_count}")
+    print(f"   Skipped: {skipped_count}")
+    print(f"   Failed: {len(tables) - success_count - skipped_count}")
     print("=" * 80)
     print()
     print("Next steps:")
