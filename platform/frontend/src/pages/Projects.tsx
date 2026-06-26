@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ThunderboltOutlined, TableOutlined, SwapOutlined,
-  CheckCircleOutlined,
+  CheckCircleOutlined, SettingOutlined, ProfileOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { projectsApi, connectionsApi } from '../api/client';
@@ -13,6 +13,8 @@ import JobsDrawer from '../components/JobsDrawer';
 import SchemaDrawer from '../components/SchemaDrawer';
 import MappingDrawer from '../components/MappingDrawer';
 import ValidationDrawer from '../components/ValidationDrawer';
+import ConfigDrawer from '../components/ConfigDrawer';
+import ErrorsDrawer from '../components/ErrorsDrawer';
 import { useAuth } from '../auth/AuthContext';
 
 const STATUS_COLOR: Record<ProjectStatus, string> = {
@@ -43,6 +45,8 @@ export default function Projects() {
   const [tablesFor, setTablesFor] = useState<Project | null>(null);
   const [mappingFor, setMappingFor] = useState<Project | null>(null);
   const [validateFor, setValidateFor] = useState<Project | null>(null);
+  const [configFor, setConfigFor] = useState<Project | null>(null);
+  const [errorsFor, setErrorsFor] = useState<Project | null>(null);
   const [form] = Form.useForm<FormValues>();
 
   const { data, isLoading } = useQuery({ queryKey: ['projects'], queryFn: projectsApi.list });
@@ -102,6 +106,9 @@ export default function Projects() {
       title: 'Actions',
       render: (_: unknown, row: Project) => (
         <Space>
+          <Button size="small" icon={<SettingOutlined />}
+            disabled={!canWrite}
+            onClick={() => setConfigFor(row)}>Configure</Button>
           <Button size="small" icon={<TableOutlined />}
             disabled={!canWrite || !row.sourceConnectionId}
             onClick={() => setTablesFor(row)}>Tables</Button>
@@ -114,6 +121,8 @@ export default function Projects() {
           <Button size="small" type="primary" ghost icon={<ThunderboltOutlined />}
             disabled={!canWrite}
             onClick={() => setRunsFor(row)}>Runs</Button>
+          <Button size="small" icon={<ProfileOutlined />}
+            onClick={() => setErrorsFor(row)}>Logs</Button>
           <Button size="small" danger icon={<DeleteOutlined />} disabled={!canWrite}
             onClick={() => modal.confirm({
               title: `Delete project "${row.name}"?`,
@@ -219,6 +228,8 @@ export default function Projects() {
       <SchemaDrawer project={tablesFor} onClose={() => setTablesFor(null)} />
       <MappingDrawer project={mappingFor} onClose={() => setMappingFor(null)} />
       <ValidationDrawer project={validateFor} onClose={() => setValidateFor(null)} />
+      <ConfigDrawer project={configFor} onClose={() => setConfigFor(null)} />
+      <ErrorsDrawer project={errorsFor} onClose={() => setErrorsFor(null)} />
     </Card>
   );
 }

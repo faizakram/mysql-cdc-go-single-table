@@ -1,6 +1,8 @@
-import { Card, Col, Row, Statistic, Alert, Table, Tag, Tooltip, Badge, Space, Empty } from 'antd';
-import { useQuery } from '@tanstack/react-query';
-import { projectsApi, connectionsApi, monitoringApi } from '../api/client';
+import { Card, Col, Row, Statistic, Alert, Table, Tag, Tooltip, Badge, Space, Empty, Button, App } from 'antd';
+import { PauseOutlined, StepForwardOutlined, StopOutlined } from '@ant-design/icons';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { projectsApi, connectionsApi, monitoringApi, jobsApi } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import type { ConnectorHealth, ProjectHealth } from '../api/types';
 
 const STATE_COLOR: Record<string, string> = {
@@ -16,8 +18,18 @@ function ConnectorTag({ c }: { c: ConnectorHealth }) {
 }
 
 export default function Dashboard() {
+  const { message } = App.useApp();
+  const { user } = useAuth();
+  const canControl = user?.role !== 'VIEWER';
+  const qc = useQueryClient();
   const projects = useQuery({ queryKey: ['projects'], queryFn: projectsApi.list });
   const connections = useQuery({ queryKey: ['connections'], queryFn: connectionsApi.list });
+
+  const control = useMutation({
+    mutationFn: ({ fn, id }: { fn: (id: string) => Promise<unknown>; id: string }) => fn(id),
+    onSuccess: () => { message.success('Done'); qc.invalidateQueries({ queryKey: ['monitoring-overview'] }); },
+    onError: (e: any) => message.error(e?.response?.data?.message ?? 'Action failed'),
+  });
   const overview = useQuery({
     queryKey: ['monitoring-overview'],
     queryFn: monitoringApi.overview,
@@ -78,6 +90,22 @@ export default function Dashboard() {
                     {p.connectors.length === 0
                       ? '—'
                       : p.connectors.map((c) => <ConnectorTag key={c.name} c={c} />)}
+                  </Space>
+                ),
+              },
+              {
+                title: 'Controls',
+                render: (_, p: ProjectHealth) => (
+                  <Space>
+                    <Tooltip title="Pause"><Button size="small" icon={<PauseOutlined />}
+                      disabled={!canControl || !p.jobId || !['RUNNING', 'SNAPSHOT'].includes(p.jobStatus)}
+                      onClick={() => control.mutate({ fn: jobsApi.pause, id: p.jobId! })} /></Tooltip>
+                    <Tooltip title="Resume"><Button size="small" icon={<StepForwardOutlined />}
+                      disabled={!canControl || !p.jobId || p.jobStatus !== 'PAUSED'}
+                      onClick={() => control.mutate({ fn: jobsApi.resume, id: p.jobId! })} /></Tooltip>
+                    <Tooltip title="Stop"><Button size="small" danger icon={<StopOutlined />}
+                      disabled={!canControl || !p.jobId || ['STOPPED', 'COMPLETED'].includes(p.jobStatus)}
+                      onClick={() => control.mutate({ fn: jobsApi.stop, id: p.jobId! })} /></Tooltip>
                   </Space>
                 ),
               },
