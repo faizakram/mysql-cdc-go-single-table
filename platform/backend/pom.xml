@@ -131,6 +131,12 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Kafka AdminClient: measure sink consumer-group lag (CDC lag metric, #50) -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

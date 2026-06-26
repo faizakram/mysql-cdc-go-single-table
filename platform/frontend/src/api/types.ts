@@ -142,6 +142,7 @@ export interface ProjectHealth {
   jobId: string | null;
   jobStatus: string;
   healthy: boolean;
+  lagRecords: number | null;
   connectors: ConnectorHealth[];
 }
 

@@ -9,5 +9,6 @@ public record ProjectHealth(
         UUID jobId,
         String jobStatus,
         boolean healthy,
+        Long lagRecords,        // sink consumer-group lag (#50); null if unknown
         List<ConnectorHealth> connectors
 ) {}

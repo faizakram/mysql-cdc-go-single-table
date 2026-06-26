@@ -67,6 +67,11 @@ export default function Dashboard() {
               },
               { title: 'Job', dataIndex: 'jobStatus', render: (s: string) => <Tag>{s}</Tag> },
               {
+                title: 'Lag (records)', dataIndex: 'lagRecords',
+                render: (v: number | null) => (v == null ? '—'
+                  : <span style={{ color: v > 0 ? '#faad14' : '#3f8600' }}>{v}</span>),
+              },
+              {
                 title: 'Connectors',
                 render: (_, p) => (
                   <Space wrap>

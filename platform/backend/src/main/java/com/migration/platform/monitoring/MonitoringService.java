@@ -27,11 +27,14 @@ public class MonitoringService {
     private final ProjectRepository projects;
     private final JobRepository jobs;
     private final KafkaConnectClient connect;
+    private final LagService lagService;
 
-    public MonitoringService(ProjectRepository projects, JobRepository jobs, KafkaConnectClient connect) {
+    public MonitoringService(ProjectRepository projects, JobRepository jobs, KafkaConnectClient connect,
+                             LagService lagService) {
         this.projects = projects;
         this.jobs = jobs;
         this.connect = connect;
+        this.lagService = lagService;
     }
 
     /** Health for every project that has at least one run with deployed connectors. */
@@ -50,7 +53,7 @@ public class MonitoringService {
                 .orElseThrow(() -> new NotFoundException("Project " + projectId + " not found"));
         return latestJobWithConnectors(projectId)
                 .map(job -> buildHealth(p, job))
-                .orElse(new ProjectHealth(p.getId(), p.getName(), null, "NO_RUN", false, List.of()));
+                .orElse(new ProjectHealth(p.getId(), p.getName(), null, "NO_RUN", false, null, List.of()));
     }
 
     private java.util.Optional<MigrationJob> latestJobWithConnectors(UUID projectId) {
@@ -68,7 +71,9 @@ public class MonitoringService {
             connectors.add(connectorHealth(job.getSinkConnectorName(), "sink"));
         }
         boolean healthy = !connectors.isEmpty() && connectors.stream().allMatch(ConnectorHealth::healthy);
-        return new ProjectHealth(p.getId(), p.getName(), job.getId(), job.getStatus().name(), healthy, connectors);
+        Long lag = job.getSinkConnectorName() != null
+                ? lagService.consumerGroupLag("connect-" + job.getSinkConnectorName()) : null;
+        return new ProjectHealth(p.getId(), p.getName(), job.getId(), job.getStatus().name(), healthy, lag, connectors);
     }
 
     @SuppressWarnings("unchecked")
