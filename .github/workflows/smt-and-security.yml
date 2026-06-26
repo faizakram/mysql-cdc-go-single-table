@@ -40,7 +40,7 @@ jobs:
       # Filesystem scan: dependency vulnerabilities (Maven/npm/Go) + leaked secrets.
       # Fails the build only on fixable CRITICAL issues so the gate is actionable, not noisy.
       - name: Trivy vulnerability & secret scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
           scanners: vuln,secret
@@ -48,3 +48,6 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           format: table
+          # Skip vendored/build artifacts so we scan source + dependency manifests, not bundled
+          # third-party wheels or compiled jars.
+          skip-dirs: debezium-setup/venv,platform/frontend/node_modules,platform/backend/target,debezium-setup/custom-smt/target
