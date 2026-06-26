@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type {
   Connection, ConnectionRequest, TestResult,
-  Project, ProjectRequest, Job, TableInfo, ColumnInfo, ProjectHealth,
+  Project, ProjectRequest, Job, TableInfo, ColumnInfo, ColumnMapping, ProjectHealth,
 } from './types';
 
 const http = axios.create({ baseURL: '/api/v1' });
@@ -31,6 +31,10 @@ export const schemaApi = {
     }).then((r) => r.data),
   columns: (connectionId: string, schema: string, table: string) =>
     http.get<ColumnInfo[]>(`/connections/${connectionId}/schema/columns`, {
+      params: { schema, table },
+    }).then((r) => r.data),
+  typeMapping: (connectionId: string, schema: string, table: string) =>
+    http.get<ColumnMapping[]>(`/connections/${connectionId}/schema/type-mapping`, {
       params: { schema, table },
     }).then((r) => r.data),
 };

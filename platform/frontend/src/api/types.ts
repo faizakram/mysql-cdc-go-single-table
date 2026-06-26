@@ -67,6 +67,16 @@ export interface ColumnInfo {
   primaryKey: boolean;
 }
 
+export interface ColumnMapping {
+  column: string;
+  sourceType: string;
+  size: number;
+  nullable: boolean;
+  primaryKey: boolean;
+  proposedType: string;
+  semantic: 'NONE' | 'UUID' | 'JSON';
+}
+
 export type JobStatus =
   | 'CREATED' | 'SNAPSHOT' | 'RUNNING' | 'PAUSED' | 'STOPPED' | 'FAILED' | 'COMPLETED';
 
