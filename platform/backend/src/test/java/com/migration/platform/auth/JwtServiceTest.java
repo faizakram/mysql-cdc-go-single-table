@@ -13,7 +13,8 @@ class JwtServiceTest {
         return new JwtService(new PlatformProperties(
                 new PlatformProperties.Connect("u", "k", null, null),
                 new PlatformProperties.Crypto("x"), new PlatformProperties.Cors("*"),
-                new PlatformProperties.Auth(secret, 60, "a", "b")));
+                new PlatformProperties.Auth(secret, 60, "a", "b"),
+                new PlatformProperties.Reconciliation("0 0 0 * * *")));
     }
 
     private final JwtService service = jwt("0123456789012345678901234567890123");

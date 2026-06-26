@@ -62,6 +62,8 @@ export const reconciliationApi = {
     }).then((r) => r.data),
   history: (projectId: string) =>
     http.get<ReconciliationRun[]>(`/projects/${projectId}/reconciliation`).then((r) => r.data),
+  report: (runId: string) =>
+    http.get(`/reconciliation/${runId}/report.csv`, { responseType: 'blob' }).then((r) => r.data as Blob),
 };
 
 export const monitoringApi = {

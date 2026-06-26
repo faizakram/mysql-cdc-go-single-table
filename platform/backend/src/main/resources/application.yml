@@ -40,6 +40,10 @@ platform:
     # AES-256 key (base64, 32 bytes). MUST be overridden in any real environment.
     # Seeds the Security epic (#43): connection secrets are encrypted at rest, never returned by the API.
     key: ${PLATFORM_CRYPTO_KEY:ZGV2LW9ubHktYWVzMjU2LWtleS1jaGFuZ2UtbWUhISE=}
+  reconciliation:
+    # Scheduled drift-detection reconciliation (#49). Runs only for projects opted in
+    # (config.autoReconcile = true). Default: every 6 hours.
+    cron: ${RECONCILIATION_CRON:0 0 */6 * * *}
   auth:
     # HMAC-SHA256 signing key (>= 32 bytes). MUST be overridden in any real environment (#55).
     jwt-secret: ${JWT_SECRET:dev-only-jwt-signing-secret-change-me-please-32b+}

@@ -17,7 +17,8 @@ class ConnectorConfigServiceTest {
             new PlatformProperties(
                     new PlatformProperties.Connect("http://connect:8083", "kafka:9092", null, null),
                     new PlatformProperties.Crypto("x"), new PlatformProperties.Cors("*"),
-                    new PlatformProperties.Auth("s", 1, "a", "b")));
+                    new PlatformProperties.Auth("s", 1, "a", "b"),
+                    new PlatformProperties.Reconciliation("0 0 0 * * *")));
 
     private MigrationProject project(Map<String, Object> config) {
         MigrationProject p = new MigrationProject();

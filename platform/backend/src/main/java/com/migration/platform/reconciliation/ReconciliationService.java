@@ -58,6 +58,13 @@ public class ReconciliationService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public RunDto report(UUID runId) {
+        ReconciliationRun run = runRepo.findById(runId)
+                .orElseThrow(() -> new NotFoundException("Reconciliation run " + runId + " not found"));
+        return RunDto.from(run, resultRepo.findByRunIdOrderByTableName(runId));
+    }
+
     @Transactional
     public RunDto run(UUID projectId, String mode, int sampleSize) {
         boolean checksum = "CHECKSUM".equalsIgnoreCase(mode);
