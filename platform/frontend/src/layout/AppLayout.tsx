@@ -1,8 +1,11 @@
-import { Layout, Menu, Space, Dropdown, Avatar, Tag, Badge, Button, Drawer, Grid } from 'antd';
+import {
+  Layout, Menu, Space, Dropdown, Avatar, Tag, Badge, Button, Drawer, Grid, Breadcrumb, Typography,
+  Tooltip,
+} from 'antd';
 import {
   DashboardOutlined, DatabaseOutlined, ProjectOutlined, UserOutlined, LogoutOutlined, TeamOutlined,
   BellOutlined, AreaChartOutlined, AuditOutlined, MenuOutlined, DeploymentUnitOutlined,
-  MoonOutlined, SunOutlined,
+  MoonOutlined, SunOutlined, ColumnHeightOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -13,6 +16,15 @@ import { alertsApi } from '../api/client';
 
 const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
+
+const PAGE_TITLE: Record<string, string> = {
+  '/': 'Dashboard',
+  '/projects': 'Projects',
+  '/connections': 'Connections',
+  '/alerts': 'Alerts',
+  '/users': 'Users',
+  '/audit': 'Audit log',
+};
 
 function Brand({ subtitle }: { subtitle?: boolean }) {
   return (
@@ -30,7 +42,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
-  const { mode, toggle } = useThemeMode();
+  const { mode, toggle, density, toggleDensity } = useThemeMode();
   const screens = useBreakpoint();
   const isMobile = !screens.lg;
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -53,6 +65,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     { key: 'grafana', icon: <AreaChartOutlined />, label: 'Grafana ↗' },
   ];
   const selected = items.find((i) => i.key !== '/' && location.pathname.startsWith(i.key))?.key ?? '/';
+  const pageTitle = PAGE_TITLE[selected] ?? 'Dashboard';
 
   const onMenuClick = (key: string) => {
     setDrawerOpen(false);
@@ -97,10 +110,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       )}
 
       <Layout>
-        <Header style={{
-          background: '#fff', display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between', gap: 12,
-          borderBottom: '1px solid #EBEDF2', position: 'sticky', top: 0, zIndex: 10,
+        <Header className="app-header" style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          position: 'sticky', top: 0, zIndex: 10,
         }}>
           <Space size={12} style={{ minWidth: 0 }}>
             {isMobile && (
@@ -111,13 +123,24 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               {isMobile ? 'CDC Console' : 'Heterogeneous Database Migration (CDC)'}
             </span>
           </Space>
-          <Space size={8}>
-            <Button
-              type="text"
-              aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
-              onClick={toggle}
-            />
+          <Space size={6}>
+            <Tooltip title={`Density: ${density}`}>
+              <Button
+                type={density === 'compact' ? 'primary' : 'text'}
+                ghost={density === 'compact'}
+                aria-label="Toggle density"
+                icon={<ColumnHeightOutlined />}
+                onClick={toggleDensity}
+              />
+            </Tooltip>
+            <Tooltip title={mode === 'dark' ? 'Light mode' : 'Dark mode'}>
+              <Button
+                type="text"
+                aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
+                onClick={toggle}
+              />
+            </Tooltip>
             <Dropdown
               menu={{ items: [{ key: 'logout', icon: <LogoutOutlined />, label: 'Sign out', onClick: logout }] }}
             >
@@ -129,7 +152,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </Dropdown>
           </Space>
         </Header>
-        <Content className="app-content" style={{ margin: 24 }}>{children}</Content>
+        <Content className="app-content" style={{ margin: 24 }}>
+          <div className="page-header">
+            <Breadcrumb items={[{ title: 'CDC Console' }, { title: pageTitle }]} />
+            <Typography.Title level={3} style={{ margin: '4px 0 0' }}>{pageTitle}</Typography.Title>
+          </div>
+          <div key={location.pathname} className="page-enter">{children}</div>
+        </Content>
       </Layout>
     </Layout>
   );

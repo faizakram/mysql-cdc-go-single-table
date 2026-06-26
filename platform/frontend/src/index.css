@@ -65,6 +65,21 @@ body {
 
 .app-title { font-weight: 600; color: var(--title-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Header: theme-aware surface + hairline divider (color comes from the Layout token; this just
+   adds the divider so it reads correctly in both light and dark). */
+.app-header { border-bottom: 1px solid var(--card-border); }
+
+/* Per-page header: breadcrumb + title. */
+.page-header { margin-bottom: 16px; }
+.page-header .ant-breadcrumb { font-size: 12px; }
+
+/* Subtle page-in motion on route change. */
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: pageIn 0.26s ease both; }
+
 /* Severity stripe: a colored left rail on a stat card. */
 .stat-card { position: relative; overflow: hidden; }
 .stat-card::before {

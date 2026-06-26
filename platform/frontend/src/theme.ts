@@ -19,11 +19,13 @@ const FONT =
   '"Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
 
 export type ThemeMode = 'light' | 'dark';
+export type Density = 'comfortable' | 'compact';
 
-export function buildTheme(mode: ThemeMode): ThemeConfig {
+export function buildTheme(mode: ThemeMode, density: Density = 'comfortable'): ThemeConfig {
   const dark = mode === 'dark';
+  const base = dark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm;
   return {
-    algorithm: dark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+    algorithm: density === 'compact' ? [base, antdTheme.compactAlgorithm] : base,
     token: {
       colorPrimary: INDIGO,
       colorInfo: INDIGO,
