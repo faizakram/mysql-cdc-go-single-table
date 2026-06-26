@@ -4,6 +4,7 @@ import com.migration.platform.connection.dto.TestResult;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
+import java.util.Map;
 
 /** Validates source/target connectivity using JDBC (issue #22 / UI #35 "Test connection"). */
 @Service
@@ -16,9 +17,9 @@ public class ConnectionTestService {
     }
 
     public TestResult test(DbType type, String host, int port, String database,
-                           String username, String password) {
+                           String username, String password, Map<String, Object> options) {
         long start = System.currentTimeMillis();
-        try (Connection conn = jdbc.open(type, host, port, database, username, password)) {
+        try (Connection conn = jdbc.open(type, host, port, database, username, password, options)) {
             boolean valid = conn.isValid(8);
             long latency = System.currentTimeMillis() - start;
             return valid

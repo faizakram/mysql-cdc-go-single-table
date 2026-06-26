@@ -63,13 +63,13 @@ public class ConnectionService {
     public TestResult test(UUID id) {
         DbConnection c = find(id);
         return tester.test(c.getDbType(), c.getHost(), c.getPort(), c.getDatabaseName(),
-                c.getUsername(), crypto.decrypt(c.getPasswordEnc()));
+                c.getUsername(), crypto.decrypt(c.getPasswordEnc()), c.getOptions());
     }
 
     /** Test ad-hoc params before saving (UI "Test connection" on the form). */
     public TestResult testAdhoc(ConnectionRequest req) {
         return tester.test(req.dbType(), req.host(), req.port(), req.databaseName(),
-                req.username(), req.password());
+                req.username(), req.password(), req.options());
     }
 
     private void apply(DbConnection c, ConnectionRequest req) {

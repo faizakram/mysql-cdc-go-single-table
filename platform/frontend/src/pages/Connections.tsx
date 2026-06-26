@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Button, Card, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, App,
+  Button, Card, Collapse, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, App,
 } from 'antd';
 import { PlusOutlined, ThunderboltOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,11 +9,32 @@ import type { Connection, ConnectionRequest, DbType } from '../api/types';
 
 const DEFAULT_PORT: Record<DbType, number> = { SQLSERVER: 1433, POSTGRESQL: 5432 };
 
+interface ConnForm extends Omit<ConnectionRequest, 'options'> {
+  encrypt?: boolean;
+  trustServerCertificate?: boolean;
+  sslmode?: string;
+}
+
+function buildRequest(v: ConnForm): ConnectionRequest {
+  const options: Record<string, unknown> = {};
+  if (v.dbType === 'SQLSERVER') {
+    options.encrypt = v.encrypt ?? true;
+    if (v.trustServerCertificate) options.trustServerCertificate = true;
+  } else if (v.sslmode) {
+    options.sslmode = v.sslmode;
+  }
+  return {
+    name: v.name, dbType: v.dbType, host: v.host, port: v.port,
+    databaseName: v.databaseName, username: v.username, password: v.password, options,
+  };
+}
+
 export default function Connections() {
   const { message, modal } = App.useApp();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [form] = Form.useForm<ConnectionRequest>();
+  const [form] = Form.useForm<ConnForm>();
+  const dbType = Form.useWatch('dbType', form);
 
   const { data, isLoading } = useQuery({ queryKey: ['connections'], queryFn: connectionsApi.list });
 
@@ -41,7 +62,7 @@ export default function Connections() {
   const handleTest = async () => {
     try {
       const values = await form.validateFields();
-      const res = await testAdhoc.mutateAsync(values);
+      const res = await testAdhoc.mutateAsync(buildRequest(values));
       if (res.success) message.success(`Connected in ${res.latencyMs ?? '?'} ms`);
       else message.error(`Failed: ${res.message}`);
     } catch {
@@ -117,14 +138,14 @@ export default function Connections() {
             key="save" type="primary" loading={create.isPending}
             onClick={async () => {
               const values = await form.validateFields();
-              create.mutate(values);
+              create.mutate(buildRequest(values));
             }}
           >
             Save
           </Button>,
         ]}
       >
-        <Form form={form} layout="vertical" initialValues={{ dbType: 'SQLSERVER', port: 1433 }}>
+        <Form form={form} layout="vertical" initialValues={{ dbType: 'SQLSERVER', port: 1433, encrypt: true }}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input placeholder="prod-source-mssql" />
           </Form.Item>
@@ -154,6 +175,37 @@ export default function Connections() {
           <Form.Item name="password" label="Password" rules={[{ required: true }]}>
             <Input.Password placeholder="••••••••" />
           </Form.Item>
+
+          <Collapse
+            ghost
+            defaultActiveKey={['tls']}
+            items={[{
+              key: 'tls',
+              label: 'TLS / encryption',
+              children: dbType === 'POSTGRESQL' ? (
+                <Form.Item name="sslmode" label="SSL mode"
+                  tooltip="PostgreSQL JDBC sslmode; use require/verify-full in production">
+                  <Select allowClear placeholder="driver default" options={[
+                    { value: 'disable', label: 'disable' },
+                    { value: 'require', label: 'require' },
+                    { value: 'verify-ca', label: 'verify-ca' },
+                    { value: 'verify-full', label: 'verify-full' },
+                  ]} />
+                </Form.Item>
+              ) : (
+                <Space size="large">
+                  <Form.Item name="encrypt" label="Encrypt" valuePropName="checked"
+                    tooltip="SQL Server: encrypt the connection (recommended on)">
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item name="trustServerCertificate" label="Trust server cert" valuePropName="checked"
+                    tooltip="Only for dev / self-signed certs; do not enable in production">
+                    <Switch />
+                  </Form.Item>
+                </Space>
+              ),
+            }]}
+          />
         </Form>
       </Modal>
     </Card>
