@@ -4,6 +4,7 @@ import type {
   Connection, ConnectionRequest, TestResult,
   Project, ProjectRequest, Job, JobTableStatus, TableInfo, ColumnInfo, ColumnMapping, ProjectHealth,
   ReconciliationRun, LoginResponse, MeResponse, UserAdmin, RoleName, AlertItem, ConstraintApplyResult,
+  Schedule, ScheduleRequest, OrchestratorStatus,
 } from './types';
 
 const http = axios.create({ baseURL: '/api/v1' });
@@ -118,4 +119,19 @@ export const jobsApi = {
   pause: (id: string) => http.post<Job>(`/jobs/${id}/pause`).then((r) => r.data),
   resume: (id: string) => http.post<Job>(`/jobs/${id}/resume`).then((r) => r.data),
   stop: (id: string) => http.post<Job>(`/jobs/${id}/stop`).then((r) => r.data),
+};
+
+export const schedulesApi = {
+  listForProject: (projectId: string) =>
+    http.get<Schedule[]>(`/projects/${projectId}/schedules`).then((r) => r.data),
+  create: (projectId: string, body: ScheduleRequest) =>
+    http.post<Schedule>(`/projects/${projectId}/schedules`, body).then((r) => r.data),
+  update: (id: string, body: ScheduleRequest) =>
+    http.put<Schedule>(`/schedules/${id}`, body).then((r) => r.data),
+  remove: (id: string) => http.delete(`/schedules/${id}`).then(() => undefined),
+  runNow: (id: string) => http.post<Schedule>(`/schedules/${id}/run-now`).then((r) => r.data),
+};
+
+export const orchestratorApi = {
+  status: () => http.get<OrchestratorStatus>('/orchestrator/status').then((r) => r.data),
 };

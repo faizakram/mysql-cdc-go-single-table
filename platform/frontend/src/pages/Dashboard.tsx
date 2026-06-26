@@ -1,9 +1,9 @@
 import { Card, Col, Row, Statistic, Alert, Table, Tag, Tooltip, Badge, Space, Empty, Button, App } from 'antd';
 import { PauseOutlined, StepForwardOutlined, StopOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { projectsApi, connectionsApi, monitoringApi, jobsApi } from '../api/client';
+import { projectsApi, connectionsApi, monitoringApi, jobsApi, orchestratorApi } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import type { ConnectorHealth, ProjectHealth } from '../api/types';
+import type { ConnectorHealth, ProjectHealth, OrchestratorTask } from '../api/types';
 
 const STATE_COLOR: Record<string, string> = {
   RUNNING: 'green', PAUSED: 'orange', FAILED: 'red',
@@ -35,6 +35,15 @@ export default function Dashboard() {
     queryFn: monitoringApi.overview,
     refetchInterval: 4000,
   });
+  const queue = useQuery({
+    queryKey: ['orchestrator-status'],
+    queryFn: orchestratorApi.status,
+    refetchInterval: 3000,
+  });
+  const queueTasks: OrchestratorTask[] = [
+    ...(queue.data?.runningTasks ?? []),
+    ...(queue.data?.queuedTasks ?? []),
+  ];
 
   return (
     <>
@@ -114,12 +123,49 @@ export default function Dashboard() {
         )}
       </Card>
 
+      <Card
+        title={(
+          <Space>
+            Job queue
+            <Tag color="blue">{queue.data?.running ?? 0} running</Tag>
+            <Tag>{queue.data?.queued ?? 0} queued</Tag>
+            <Tag color="default">limit {queue.data?.maxConcurrent ?? '—'}</Tag>
+          </Space>
+        )}
+        size="small"
+        style={{ marginTop: 16 }}
+      >
+        {queueTasks.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Queue idle — no scheduled or manual runs in flight" />
+        ) : (
+          <Table<OrchestratorTask>
+            rowKey="taskId"
+            size="small"
+            pagination={false}
+            dataSource={queueTasks}
+            columns={[
+              { title: 'Project', dataIndex: 'projectName' },
+              { title: 'Kind', dataIndex: 'kind', render: (k: string) => <Tag>{k}</Tag> },
+              { title: 'Source', dataIndex: 'source', render: (s: string) => <Tag color={s === 'SCHEDULED' ? 'geekblue' : 'purple'}>{s}</Tag> },
+              {
+                title: 'State', dataIndex: 'state',
+                render: (s: string) => <Badge status={s === 'RUNNING' ? 'processing' : 'warning'} text={s} />,
+              },
+              {
+                title: 'Since',
+                render: (_, t: OrchestratorTask) => new Date(t.startedAt ?? t.enqueuedAt).toLocaleTimeString(),
+              },
+            ]}
+          />
+        )}
+      </Card>
+
       <Alert
         type="info"
         showIcon
         style={{ marginTop: 16 }}
-        message="Live status polls Kafka Connect every 4s."
-        description="JVM + custom metrics (incl. migration_active_jobs) are exposed at /actuator/prometheus for Grafana (#51). Per-table sync progress and lag charts land with the rest of the monitoring epic."
+        message="Live status polls Kafka Connect every 4s; the job queue refreshes every 3s."
+        description="Custom metrics (lag, connector state, job state) are at /actuator/prometheus and visualized in Grafana (the Grafana ↗ nav link). Schedule full-load / validation runs from a project's Schedules drawer (#53); they execute through the concurrency-limited job queue above (#54)."
       />
     </>
   );

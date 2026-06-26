@@ -62,6 +62,13 @@ platform:
     # How often (ms) to refresh per-project Prometheus gauges (lag, connector up/down) from live
     # connector health (#50). Lower = fresher dashboards, more calls to Kafka Connect.
     refresh-ms: ${METRICS_REFRESH_MS:15000}
+  orchestrator:
+    # Max orchestrated tasks (full-load / validation) running at once across all projects (#54).
+    # Excess submissions queue (backpressure); at most one task per project runs concurrently.
+    max-concurrent: ${ORCHESTRATOR_MAX_CONCURRENT:2}
+  scheduler:
+    # How often to check for due schedules (#53). Spring 6-field cron. Default: every 30s.
+    sweep-cron: ${SCHEDULER_SWEEP_CRON:*/30 * * * * *}
   auth:
     # HMAC-SHA256 signing key (>= 32 bytes). MUST be overridden in any real environment (#55).
     jwt-secret: ${JWT_SECRET:dev-only-jwt-signing-secret-change-me-please-32b+}
