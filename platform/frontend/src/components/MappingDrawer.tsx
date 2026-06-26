@@ -1,7 +1,7 @@
 import {
-  Drawer, Table, Select, Input, Alert, Button, Space, App, Tag, Typography,
+  Drawer, Table, Select, Input, Alert, Button, Space, App, Tag, Typography, Tooltip,
 } from 'antd';
-import { KeyOutlined, SaveOutlined } from '@ant-design/icons';
+import { KeyOutlined, SaveOutlined, WarningOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { schemaApi, projectsApi } from '../api/client';
@@ -100,13 +100,20 @@ export default function MappingDrawer({ project, onClose }: { project: Project |
     {
       title: 'Target type (override)',
       render: (_: unknown, m: ColumnMapping) => (
-        <Input
-          size="small"
-          style={{ width: 180 }}
-          value={edits[m.column]?.type ?? m.proposedType}
-          onChange={(ev) => setEdit(m.column, { type: ev.target.value })}
-          list="pgtypes"
-        />
+        <Space>
+          <Input
+            size="small"
+            style={{ width: 170 }}
+            value={edits[m.column]?.type ?? m.proposedType}
+            onChange={(ev) => setEdit(m.column, { type: ev.target.value })}
+            list="pgtypes"
+          />
+          {m.note && (
+            <Tooltip title={m.note}>
+              <WarningOutlined style={{ color: '#faad14' }} />
+            </Tooltip>
+          )}
+        </Space>
       ),
     },
     {

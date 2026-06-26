@@ -16,6 +16,16 @@ class TypeMappingServiceTest {
     }
 
     @Test
+    void flagsLossyOrUnsupportedTypesWithANote() {
+        assertThat(map("geography", 0, "area").note()).contains("PostGIS");
+        assertThat(map("hierarchyid", 0, "node").note()).contains("lossy");
+        assertThat(map("sql_variant", 0, "v").note()).contains("lossy");
+        // Common, faithful mappings carry no note.
+        assertThat(map("int", 10, "id").note()).isNull();
+        assertThat(map("nvarchar", 50, "name").note()).isNull();
+    }
+
+    @Test
     void perProjectOverrideWinsOverDefault() {
         var def = svc.propose(new ColumnInfo("ts", "datetimeoffset", 34, true, false));
         assertThat(def.proposedType()).isEqualTo("TIMESTAMPTZ(6)");

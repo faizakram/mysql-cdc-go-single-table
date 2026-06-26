@@ -24,6 +24,15 @@ public class TypeMappingService {
             Pattern.compile(".*(preferences|settings|metadata|response|_json)$", Pattern.CASE_INSENSITIVE);
     private static final int MAX_VARCHAR = 10_485_760;
 
+    /** Lossy / not-natively-supported source types — flagged so users don't get silent surprises (#29). */
+    private static final Map<String, String> TYPE_NOTES = Map.of(
+            "geography", "Spatial type mapped to TEXT (lossy) — use PostGIS geography for fidelity",
+            "geometry", "Spatial type mapped to TEXT (lossy) — use PostGIS geometry for fidelity",
+            "hierarchyid", "hierarchyid mapped to TEXT (lossy; no native PostgreSQL equivalent)",
+            "sql_variant", "sql_variant mapped to TEXT (lossy; mixed underlying types)",
+            "xml", "XML mapped to TEXT (consider XML/JSONB if the content is JSON)",
+            "image", "Deprecated image type mapped to BYTEA");
+
     /** Default non-parameterized MSSQL→PostgreSQL type rules (data, not code branches). */
     private static final Map<String, String> DEFAULT_TYPES = Map.ofEntries(
             Map.entry("tinyint", "SMALLINT"), Map.entry("smallint", "SMALLINT"),
@@ -65,7 +74,9 @@ public class TypeMappingService {
         String src = c.dataType() == null ? "" : c.dataType().toLowerCase();
         String pg = mapType(src, c.size(), overrides);
         String semantic = detectSemantic(src, c.name());
-        return new ColumnMapping(c.name(), c.dataType(), c.size(), c.nullable(), c.primaryKey(), pg, semantic);
+        // Only flag a note when the mapping is the default (an explicit override is the user's choice).
+        String note = (overrides != null && overrides.containsKey(src)) ? null : TYPE_NOTES.get(src);
+        return new ColumnMapping(c.name(), c.dataType(), c.size(), c.nullable(), c.primaryKey(), pg, semantic, note);
     }
 
     private String mapType(String src, int size, Map<String, String> overrides) {

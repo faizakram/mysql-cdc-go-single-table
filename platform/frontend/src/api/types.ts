@@ -108,6 +108,7 @@ export interface ColumnMapping {
   primaryKey: boolean;
   proposedType: string;
   semantic: 'NONE' | 'UUID' | 'JSON';
+  note: string | null;
 }
 
 export type JobStatus =

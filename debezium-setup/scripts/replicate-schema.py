@@ -209,7 +209,14 @@ def convert_type(data_type, max_length, precision, scale):
     if data_type_lower in ['decimal', 'numeric']:
         return TYPE_MAPPING[data_type_lower](precision, scale)
     elif data_type_lower in ['char', 'varchar', 'nchar', 'nvarchar']:
-        return TYPE_MAPPING[data_type_lower](max_length)
+        # sys.columns.max_length is in BYTES: -1 means MAX; n-types (nchar/nvarchar) use 2 bytes/char.
+        # NOTE: the platform's TypeMappingService is the canonical engine; this mirrors it (#32).
+        if max_length == -1:
+            return 'TEXT'  # VARCHAR(MAX)/NVARCHAR(MAX)
+        chars = max_length // 2 if data_type_lower in ('nchar', 'nvarchar') else max_length
+        if data_type_lower in ('char', 'nchar'):
+            return f'CHAR({chars})'
+        return f'VARCHAR({chars})' if 0 < chars <= 8000 else 'TEXT'
     elif data_type_lower in TYPE_MAPPING:
         mapping = TYPE_MAPPING[data_type_lower]
         return mapping if isinstance(mapping, str) else mapping()
