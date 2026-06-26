@@ -119,13 +119,14 @@ public class ReconciliationService {
         ReconciliationResult r = newResult(schema, table);
         try {
             long source = count(sc, "SELECT COUNT(*) FROM [" + schema + "].[" + table + "]");
-            String targetSql = "SELECT COUNT(*) FROM " + targetSchema + "." + snakeCase(table)
+            String targetSql = "SELECT COUNT(*) FROM " + targetSchema + "." + ReconciliationLogic.snakeCase(table)
                     + (softDelete ? " WHERE __cdc_deleted IS NOT TRUE" : "");
             long target = count(tc, targetSql);
+            var outcome = ReconciliationLogic.countOutcome(source, target);
             r.setSourceCount(source);
             r.setTargetCount(target);
-            r.setDifference(source - target);
-            r.setStatus(source == target ? "MATCH" : "MISMATCH");
+            r.setDifference(outcome.difference());
+            r.setStatus(outcome.status());
         } catch (Exception e) {
             r.setStatus("ERROR");
             r.setError(e.getMessage());
@@ -151,17 +152,17 @@ public class ReconciliationService {
                     + schema + "].[" + table + "] ORDER BY [" + pk + "]";
             try (Statement st = sc.createStatement(); ResultSet rs = st.executeQuery(srcSql)) {
                 while (rs.next()) {
-                    Object v = rs.getObject("k");
-                    if (v != null) sample.add(v.toString().trim().toLowerCase());
+                    String k = ReconciliationLogic.normalizeKey(rs.getObject("k"));
+                    if (k != null) sample.add(k);
                 }
             }
 
             // Which of the sampled keys exist in the target (PK cast to lower text to bridge type conversion).
             Set<String> present = new HashSet<>();
             if (!sample.isEmpty()) {
-                String tgtPk = snakeCase(pk);
+                String tgtPk = ReconciliationLogic.snakeCase(pk);
                 String tgtSql = "SELECT lower(cast(" + tgtPk + " AS text)) AS k FROM "
-                        + targetSchema + "." + snakeCase(table)
+                        + targetSchema + "." + ReconciliationLogic.snakeCase(table)
                         + " WHERE lower(cast(" + tgtPk + " AS text)) = ANY(?)"
                         + (softDelete ? " AND __cdc_deleted IS NOT TRUE" : "");
                 try (PreparedStatement ps = tc.prepareStatement(tgtSql)) {
@@ -172,10 +173,10 @@ public class ReconciliationService {
                 }
             }
 
-            long missing = sample.stream().filter(k -> !present.contains(k)).count();
-            r.setSampled((long) sample.size());
-            r.setMissing(missing);
-            r.setStatus(missing == 0 ? "MATCH" : "MISMATCH");
+            var outcome = ReconciliationLogic.evaluateSample(sample, present);
+            r.setSampled(outcome.sampled());
+            r.setMissing(outcome.missing());
+            r.setStatus(outcome.status());
         } catch (Exception e) {
             r.setStatus("ERROR");
             r.setError(e.getMessage());
@@ -210,14 +211,6 @@ public class ReconciliationService {
         if (v instanceof List<?> list) return list.stream().map(Object::toString).toList();
         if (v instanceof String s && !s.isBlank()) return List.of(s.split("\\s*,\\s*"));
         return List.of();
-    }
-
-    /** Mirrors the SnakeCaseTransform SMT so target table/column names match. */
-    private String snakeCase(String input) {
-        if (input == null || input.isEmpty()) return input;
-        String result = input.replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2");
-        result = result.replaceAll("([a-z0-9])([A-Z])", "$1_$2");
-        return result.toLowerCase();
     }
 
     private DbConnection requireConnection(UUID id, String role) {
