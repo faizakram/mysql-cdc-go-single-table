@@ -43,8 +43,12 @@ public class ConnectorConfigService {
         cfg.put("database.user", src.getUsername());
         cfg.put("database.password", srcPassword);
         cfg.put("database.names", src.getDatabaseName());
-        // TODO(#44): enforce encrypt=true + trusted certs in production.
-        cfg.put("database.encrypt", "false");
+        // TLS driven by the connection (#44): secure by default; opt out only for dev.
+        boolean encrypt = optBool(src.getOptions(), "encrypt", true);
+        cfg.put("database.encrypt", String.valueOf(encrypt));
+        if (optBool(src.getOptions(), "trustServerCertificate", false)) {
+            cfg.put("database.trustServerCertificate", "true");
+        }
         cfg.put("topic.prefix", mc.topicPrefix());
         cfg.put("table.include.list", mc.tableIncludeList());
         cfg.put("schema.history.internal.kafka.bootstrap.servers", props.connect().kafkaBootstrap());
@@ -64,11 +68,15 @@ public class ConnectorConfigService {
         boolean hard = mc.deleteStrategy() == DeleteStrategy.HARD;
         String prefix = mc.topicPrefix();
 
+        Object sslmode = tgt.getOptions() == null ? null : tgt.getOptions().get("sslmode");
+        String sslParam = (sslmode != null && !sslmode.toString().isBlank())
+                ? "&sslmode=" + sslmode : "";
+
         Map<String, Object> cfg = new LinkedHashMap<>();
         cfg.put("connector.class", "io.debezium.connector.jdbc.JdbcSinkConnector");
         cfg.put("tasks.max", String.valueOf(mc.tasksMax()));
         cfg.put("connection.url", "jdbc:postgresql://" + tgt.getHost() + ":" + tgt.getPort()
-                + "/" + tgt.getDatabaseName() + "?currentSchema=" + mc.targetSchema());
+                + "/" + tgt.getDatabaseName() + "?currentSchema=" + mc.targetSchema() + sslParam);
         cfg.put("connection.username", tgt.getUsername());
         cfg.put("connection.password", tgtPassword);
 
@@ -121,5 +129,12 @@ public class ConnectorConfigService {
         out.put("name", name);
         out.put("config", cfg);
         return out;
+    }
+
+    private boolean optBool(Map<String, Object> options, String key, boolean def) {
+        if (options == null) return def;
+        Object v = options.get(key);
+        if (v instanceof Boolean b) return b;
+        return v == null ? def : Boolean.parseBoolean(v.toString());
     }
 }

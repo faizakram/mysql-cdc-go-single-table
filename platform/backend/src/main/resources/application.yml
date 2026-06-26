@@ -1,5 +1,12 @@
 server:
   port: ${SERVER_PORT:8090}
+  # Enable HTTPS for the control-plane API in production (#44): provide a keystore and set
+  # SERVER_SSL_ENABLED=true. Terminating TLS at an ingress/load balancer is also acceptable.
+  ssl:
+    enabled: ${SERVER_SSL_ENABLED:false}
+    key-store: ${SERVER_SSL_KEYSTORE:}
+    key-store-password: ${SERVER_SSL_KEYSTORE_PASSWORD:}
+    key-store-type: ${SERVER_SSL_KEYSTORE_TYPE:PKCS12}
 
 spring:
   application:
@@ -25,6 +32,10 @@ platform:
     base-url: ${KAFKA_CONNECT_URL:http://localhost:8083}
     # Bootstrap servers as seen FROM Kafka Connect (used in generated source schema-history config).
     kafka-bootstrap: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+    # Basic-auth credentials for a secured Connect REST endpoint (#45). Leave blank for none.
+    # Connect must NOT be exposed publicly; only the control plane should reach it.
+    username: ${KAFKA_CONNECT_USER:}
+    password: ${KAFKA_CONNECT_PASSWORD:}
   crypto:
     # AES-256 key (base64, 32 bytes). MUST be overridden in any real environment.
     # Seeds the Security epic (#43): connection secrets are encrypted at rest, never returned by the API.

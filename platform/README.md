@@ -79,6 +79,14 @@ Set `KAFKA_CONNECT_URL` to your running Kafka Connect (the `debezium-setup` stac
 | `GET` | `/api/v1/connect/connectors` … | Kafka Connect proxy |
 
 ## Security note
-Connection passwords are encrypted at rest (AES-256-GCM) and never returned by the API. The dev
-crypto key in config **must** be overridden via `PLATFORM_CRYPTO_KEY` in any real environment, and
-moved to a secrets manager per issue #43.
+- **Secrets:** connection passwords are encrypted at rest (AES-256-GCM) and never returned by the API.
+  The dev crypto key **must** be overridden via `PLATFORM_CRYPTO_KEY` in any real environment, and
+  moved to a secrets manager per issue #43.
+- **TLS (#44):** connection encryption is **secure by default** — SQL Server uses `encrypt=true`
+  unless explicitly disabled per connection (TLS section on the form / `options.encrypt`,
+  `options.trustServerCertificate`); PostgreSQL honours `options.sslmode`. These flow into both the
+  JDBC test/discovery paths and the generated Debezium connector configs. Enable HTTPS for the API
+  with `SERVER_SSL_ENABLED=true` + a keystore (or terminate TLS at an ingress).
+- **Kafka Connect (#45):** all connector operations go through the control plane; Connect must not be
+  exposed publicly. Set `KAFKA_CONNECT_USER`/`KAFKA_CONNECT_PASSWORD` to authenticate to a secured
+  Connect REST endpoint (basic auth).

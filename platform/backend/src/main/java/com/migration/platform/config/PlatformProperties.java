@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "platform")
 public record PlatformProperties(Connect connect, Crypto crypto, Cors cors) {
 
-    public record Connect(String baseUrl, String kafkaBootstrap) {}
+    public record Connect(String baseUrl, String kafkaBootstrap, String username, String password) {}
 
     public record Crypto(String key) {}
 
