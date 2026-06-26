@@ -30,6 +30,7 @@ export default function Audit() {
         size="small"
         loading={q.isLoading}
         dataSource={q.data?.content}
+        scroll={{ x: 'max-content' }}
         pagination={{
           current: page + 1, pageSize: size, total: q.data?.total ?? 0,
           showSizeChanger: false, onChange: (p) => setPage(p - 1),

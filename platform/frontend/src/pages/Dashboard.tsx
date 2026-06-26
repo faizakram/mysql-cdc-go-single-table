@@ -47,17 +47,17 @@ export default function Dashboard() {
 
   return (
     <>
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={12} xl={6}>
           <Card><Statistic title="Projects" value={projects.data?.length ?? 0} loading={projects.isLoading} /></Card>
         </Col>
-        <Col span={6}>
+        <Col xs={12} sm={12} xl={6}>
           <Card><Statistic title="Connections" value={connections.data?.length ?? 0} loading={connections.isLoading} /></Card>
         </Col>
-        <Col span={6}>
+        <Col xs={12} sm={12} xl={6}>
           <Card><Statistic title="Active migrations" value={overview.data?.length ?? 0} loading={overview.isLoading} /></Card>
         </Col>
-        <Col span={6}>
+        <Col xs={12} sm={12} xl={6}>
           <Card>
             <Statistic
               title="Unhealthy"
@@ -78,6 +78,7 @@ export default function Dashboard() {
             loading={overview.isLoading}
             dataSource={overview.data}
             pagination={false}
+            scroll={{ x: 'max-content' }}
             columns={[
               { title: 'Project', dataIndex: 'projectName' },
               {
@@ -142,6 +143,7 @@ export default function Dashboard() {
             rowKey="taskId"
             size="small"
             pagination={false}
+            scroll={{ x: 'max-content' }}
             dataSource={queueTasks}
             columns={[
               { title: 'Project', dataIndex: 'projectName' },

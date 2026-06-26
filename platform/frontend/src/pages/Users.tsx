@@ -79,7 +79,7 @@ export default function Users() {
       extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>New user</Button>}
     >
       <Table rowKey="id" loading={isLoading} dataSource={data}
-        columns={columns} pagination={false}
+        columns={columns} pagination={false} scroll={{ x: 'max-content' }}
         rowClassName={(r) => (r.enabled ? '' : 'ant-table-row-disabled')} />
 
       <Modal title="New user" open={open} onCancel={() => setOpen(false)}

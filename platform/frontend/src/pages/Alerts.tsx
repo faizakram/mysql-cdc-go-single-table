@@ -46,7 +46,7 @@ export default function Alerts() {
     <Card title="Alerts" extra={<span style={{ color: 'rgba(0,0,0,.45)' }}>auto-refreshes every 15s</span>}>
       <Table<AlertItem>
         rowKey="id" loading={isLoading} dataSource={data} columns={columns}
-        pagination={{ pageSize: 15 }}
+        pagination={{ pageSize: 15 }} scroll={{ x: 'max-content' }}
         rowClassName={(a) => (a.status === 'FIRING' ? '' : 'ant-table-row-disabled')} />
     </Card>
   );

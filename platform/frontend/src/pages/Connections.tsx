@@ -127,6 +127,7 @@ export default function Connections() {
         dataSource={data}
         columns={columns}
         pagination={false}
+        scroll={{ x: 'max-content' }}
       />
 
       <Modal

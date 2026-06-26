@@ -146,7 +146,8 @@ export default function Projects() {
         </Button>
       }
     >
-      <Table rowKey="id" loading={isLoading} dataSource={data} columns={columns} pagination={false} />
+      <Table rowKey="id" loading={isLoading} dataSource={data} columns={columns} pagination={false}
+        scroll={{ x: 'max-content' }} />
 
       <Modal
         title="New migration project"

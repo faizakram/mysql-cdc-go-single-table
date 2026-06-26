@@ -1,5 +1,5 @@
-import { Button, Card, Form, Input, Typography, App } from 'antd';
-import { LockOutlined, UserOutlined } from '@ant-design/icons';
+import { Button, Form, Input, Typography, App } from 'antd';
+import { LockOutlined, UserOutlined, DeploymentUnitOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 
@@ -12,7 +12,6 @@ export default function Login() {
     setLoading(true);
     try {
       await login(v.username, v.password);
-      // AuthProvider state update re-renders the app into the authenticated shell.
     } catch (e: any) {
       message.error(e?.response?.data?.message ?? 'Invalid username or password');
     } finally {
@@ -21,27 +20,38 @@ export default function Login() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: '#f0f2f5',
-    }}>
-      <Card style={{ width: 380 }}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <Typography.Title level={4} style={{ marginBottom: 0 }}>CDC Migration</Typography.Title>
-          <Typography.Text type="secondary">Sign in to the migration console</Typography.Text>
+    <div className="login-shell">
+      <div className="login-card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+          <span className="brand-mark" style={{ width: 36, height: 36 }}>
+            <DeploymentUnitOutlined style={{ fontSize: 20 }} />
+          </span>
+          <div>
+            <Typography.Title level={4} style={{ margin: 0 }}>CDC Console</Typography.Title>
+            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+              Heterogeneous database migration
+            </Typography.Text>
+          </div>
         </div>
-        <Form layout="vertical" onFinish={onFinish}>
-          <Form.Item name="username" rules={[{ required: true, message: 'Enter your username' }]}>
-            <Input prefix={<UserOutlined />} placeholder="Username" size="large" autoFocus />
+
+        <Typography.Paragraph type="secondary" style={{ margin: '18px 0 20px' }}>
+          Sign in to manage connections, migrations and validation.
+        </Typography.Paragraph>
+
+        <Form layout="vertical" onFinish={onFinish} requiredMark={false}>
+          <Form.Item name="username" label="Username"
+            rules={[{ required: true, message: 'Enter your username' }]}>
+            <Input prefix={<UserOutlined style={{ color: '#9AA3B2' }} />} placeholder="admin" size="large" autoFocus />
           </Form.Item>
-          <Form.Item name="password" rules={[{ required: true, message: 'Enter your password' }]}>
-            <Input.Password prefix={<LockOutlined />} placeholder="Password" size="large" />
+          <Form.Item name="password" label="Password"
+            rules={[{ required: true, message: 'Enter your password' }]}>
+            <Input.Password prefix={<LockOutlined style={{ color: '#9AA3B2' }} />} placeholder="••••••••" size="large" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block size="large" loading={loading}>
+          <Button type="primary" htmlType="submit" block size="large" loading={loading} style={{ marginTop: 4 }}>
             Sign in
           </Button>
         </Form>
-      </Card>
+      </div>
     </div>
   );
 }
