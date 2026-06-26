@@ -1,8 +1,16 @@
-import { Card, Col, Row, Statistic, Alert, Table, Tag, Tooltip, Badge, Space, Empty, Button, App } from 'antd';
-import { PauseOutlined, StepForwardOutlined, StopOutlined } from '@ant-design/icons';
+import { Card, Col, Row, Alert, Table, Tag, Tooltip, Badge, Space, Button, App } from 'antd';
+import {
+  PauseOutlined, StepForwardOutlined, StopOutlined, ProjectOutlined, DatabaseOutlined,
+  ThunderboltOutlined, WarningOutlined, InboxOutlined,
+} from '@ant-design/icons';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { projectsApi, connectionsApi, monitoringApi, jobsApi, orchestratorApi } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import StatCard from '../components/StatCard';
+import EmptyState from '../components/EmptyState';
+import Sparkline from '../components/Sparkline';
+import { useSeries } from '../hooks/useSeries';
 import type { ConnectorHealth, ProjectHealth, OrchestratorTask } from '../api/types';
 
 const STATE_COLOR: Record<string, string> = {
@@ -45,33 +53,54 @@ export default function Dashboard() {
     ...(queue.data?.queuedTasks ?? []),
   ];
 
+  const activeCount = overview.data?.length ?? 0;
+  const unhealthyCount = overview.data?.filter((p) => !p.healthy).length ?? 0;
+  const activeSeries = useSeries(overview.data ? activeCount : undefined);
+  const unhealthySeries = useSeries(overview.data ? unhealthyCount : undefined);
+
+  // Per-project sink-lag history, accumulated client-side from the live overview polls.
+  const lagHist = useRef<Record<string, number[]>>({});
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (!overview.data) return;
+    const h = lagHist.current;
+    for (const p of overview.data) {
+      if (p.lagRecords == null) continue;
+      h[p.projectId] = [...(h[p.projectId] ?? []), p.lagRecords].slice(-24);
+    }
+    bump((n) => n + 1);
+  }, [overview.data]);
+
   return (
     <>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={12} xl={6}>
-          <Card><Statistic title="Projects" value={projects.data?.length ?? 0} loading={projects.isLoading} /></Card>
+          <StatCard title="Projects" value={projects.data?.length ?? 0} loading={projects.isLoading}
+            icon={<ProjectOutlined />} stripe="#4F46E5" />
         </Col>
         <Col xs={12} sm={12} xl={6}>
-          <Card><Statistic title="Connections" value={connections.data?.length ?? 0} loading={connections.isLoading} /></Card>
+          <StatCard title="Connections" value={connections.data?.length ?? 0} loading={connections.isLoading}
+            icon={<DatabaseOutlined />} stripe="#0EA5E9" />
         </Col>
         <Col xs={12} sm={12} xl={6}>
-          <Card><Statistic title="Active migrations" value={overview.data?.length ?? 0} loading={overview.isLoading} /></Card>
+          <StatCard title="Active migrations" value={activeCount} loading={overview.isLoading}
+            icon={<ThunderboltOutlined />} stripe="#16A34A" series={activeSeries} />
         </Col>
         <Col xs={12} sm={12} xl={6}>
-          <Card>
-            <Statistic
-              title="Unhealthy"
-              valueStyle={{ color: (overview.data?.filter((p) => !p.healthy).length ?? 0) > 0 ? '#cf1322' : undefined }}
-              value={overview.data?.filter((p) => !p.healthy).length ?? 0}
-              loading={overview.isLoading}
-            />
-          </Card>
+          <StatCard title="Unhealthy" value={unhealthyCount} loading={overview.isLoading}
+            icon={<WarningOutlined />} stripe={unhealthyCount > 0 ? '#DC2626' : '#94A3B8'}
+            series={unhealthySeries}
+            valueStyle={{ color: unhealthyCount > 0 ? '#DC2626' : undefined }} />
         </Col>
       </Row>
 
       <Card title="Live migration status" size="small">
         {overview.data && overview.data.length === 0 ? (
-          <Empty description="No migrations with deployed connectors yet. Start a run from a project." />
+          <EmptyState
+            icon={<InboxOutlined />}
+            title="No active migrations"
+            description="Once you start a run from a project, its connectors, lag and health will stream here live."
+          />
         ) : (
           <Table<ProjectHealth>
             rowKey="projectId"
@@ -91,7 +120,16 @@ export default function Dashboard() {
               {
                 title: 'Lag (records)', dataIndex: 'lagRecords',
                 render: (v: number | null) => (v == null ? '—'
-                  : <span style={{ color: v > 0 ? '#faad14' : '#3f8600' }}>{v}</span>),
+                  : <span style={{ color: v > 0 ? '#D97706' : '#16A34A' }}>{v}</span>),
+              },
+              {
+                title: 'Lag trend',
+                render: (_, p) => {
+                  const s = lagHist.current[p.projectId] ?? [];
+                  return s.length > 1
+                    ? <Sparkline data={s} color={s[s.length - 1] > 0 ? '#D97706' : '#16A34A'} />
+                    : <span style={{ color: '#94A3B8' }}>—</span>;
+                },
               },
               {
                 title: 'Connectors',
@@ -137,7 +175,8 @@ export default function Dashboard() {
         style={{ marginTop: 16 }}
       >
         {queueTasks.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Queue idle — no scheduled or manual runs in flight" />
+          <EmptyState compact icon={<ThunderboltOutlined />} title="Queue idle"
+            description="No scheduled or manual runs in flight. Run-now from a schedule to enqueue one." />
         ) : (
           <Table<OrchestratorTask>
             rowKey="taskId"

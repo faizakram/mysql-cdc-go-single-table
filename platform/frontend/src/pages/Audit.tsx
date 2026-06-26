@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Card, Table, Tag, Typography, Tooltip } from 'antd';
+import { FileSearchOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { auditApi } from '../api/client';
+import EmptyState from '../components/EmptyState';
 import type { AuditEntry } from '../api/types';
 
 const ACTION_COLOR: Record<string, string> = {
@@ -31,6 +33,10 @@ export default function Audit() {
         loading={q.isLoading}
         dataSource={q.data?.content}
         scroll={{ x: 'max-content' }}
+        locale={{ emptyText: !q.isLoading && (
+          <EmptyState icon={<FileSearchOutlined />} title="No audit events yet"
+            description="Logins and control/config actions (start, stop, create, delete…) will be recorded here." />
+        ) }}
         pagination={{
           current: page + 1, pageSize: size, total: q.data?.total ?? 0,
           showSizeChanger: false, onChange: (p) => setPage(p - 1),

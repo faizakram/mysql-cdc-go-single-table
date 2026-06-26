@@ -2,10 +2,11 @@ import { useState } from 'react';
 import {
   Button, Card, Collapse, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, App,
 } from 'antd';
-import { PlusOutlined, ThunderboltOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, ThunderboltOutlined, DeleteOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { connectionsApi } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import EmptyState from '../components/EmptyState';
 import type { Connection, ConnectionRequest, DbType } from '../api/types';
 
 const DEFAULT_PORT: Record<DbType, number> = { SQLSERVER: 1433, POSTGRESQL: 5432 };
@@ -128,6 +129,10 @@ export default function Connections() {
         columns={columns}
         pagination={false}
         scroll={{ x: 'max-content' }}
+        locale={{ emptyText: !isLoading && (
+          <EmptyState icon={<DatabaseOutlined />} title="No connections yet"
+            description="Add a source (SQL Server) and target (PostgreSQL) connection to get started." />
+        ) }}
       />
 
       <Modal

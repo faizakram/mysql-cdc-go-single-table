@@ -2,11 +2,13 @@ import { Layout, Menu, Space, Dropdown, Avatar, Tag, Badge, Button, Drawer, Grid
 import {
   DashboardOutlined, DatabaseOutlined, ProjectOutlined, UserOutlined, LogoutOutlined, TeamOutlined,
   BellOutlined, AreaChartOutlined, AuditOutlined, MenuOutlined, DeploymentUnitOutlined,
+  MoonOutlined, SunOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { useThemeMode } from '../theme/ThemeMode';
 import { alertsApi } from '../api/client';
 
 const { Header, Sider, Content } = Layout;
@@ -28,6 +30,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { mode, toggle } = useThemeMode();
   const screens = useBreakpoint();
   const isMobile = !screens.lg;
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -108,15 +111,23 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               {isMobile ? 'CDC Console' : 'Heterogeneous Database Migration (CDC)'}
             </span>
           </Space>
-          <Dropdown
-            menu={{ items: [{ key: 'logout', icon: <LogoutOutlined />, label: 'Sign out', onClick: logout }] }}
-          >
-            <Space style={{ cursor: 'pointer' }}>
-              <Avatar size="small" style={{ background: '#4F46E5' }} icon={<UserOutlined />} />
-              {!isMobile && <span style={{ fontWeight: 500 }}>{user?.username}</span>}
-              <Tag color="blue" style={{ marginInlineEnd: 0 }}>{user?.role}</Tag>
-            </Space>
-          </Dropdown>
+          <Space size={8}>
+            <Button
+              type="text"
+              aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
+              onClick={toggle}
+            />
+            <Dropdown
+              menu={{ items: [{ key: 'logout', icon: <LogoutOutlined />, label: 'Sign out', onClick: logout }] }}
+            >
+              <Space style={{ cursor: 'pointer' }}>
+                <Avatar size="small" style={{ background: '#4F46E5' }} icon={<UserOutlined />} />
+                {!isMobile && <span style={{ fontWeight: 500 }}>{user?.username}</span>}
+                <Tag color="blue" style={{ marginInlineEnd: 0 }}>{user?.role}</Tag>
+              </Space>
+            </Dropdown>
+          </Space>
         </Header>
         <Content className="app-content" style={{ margin: 24 }}>{children}</Content>
       </Layout>

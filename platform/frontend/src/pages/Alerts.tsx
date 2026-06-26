@@ -1,8 +1,9 @@
 import { Card, Table, Tag, Button, App } from 'antd';
-import { CheckOutlined } from '@ant-design/icons';
+import { CheckOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { alertsApi } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import EmptyState from '../components/EmptyState';
 import type { AlertItem } from '../api/types';
 
 const SEV_COLOR: Record<string, string> = { INFO: 'blue', WARNING: 'gold', CRITICAL: 'red' };
@@ -47,6 +48,10 @@ export default function Alerts() {
       <Table<AlertItem>
         rowKey="id" loading={isLoading} dataSource={data} columns={columns}
         pagination={{ pageSize: 15 }} scroll={{ x: 'max-content' }}
+        locale={{ emptyText: !isLoading && (
+          <EmptyState icon={<CheckCircleOutlined />} title="No alerts — all clear"
+            description="Connector failures and lag-threshold breaches will appear here when they occur." />
+        ) }}
         rowClassName={(a) => (a.status === 'FIRING' ? '' : 'ant-table-row-disabled')} />
     </Card>
   );
