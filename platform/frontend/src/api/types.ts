@@ -1,3 +1,15 @@
+export interface LoginResponse {
+  token: string;
+  username: string;
+  role: string;
+  expiresInMinutes: number;
+}
+
+export interface MeResponse {
+  username: string;
+  role: string;
+}
+
 export type DbType = 'SQLSERVER' | 'POSTGRESQL';
 
 export type ProjectStatus = 'DRAFT' | 'READY' | 'ACTIVE' | 'ARCHIVED';

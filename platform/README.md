@@ -90,3 +90,7 @@ Set `KAFKA_CONNECT_URL` to your running Kafka Connect (the `debezium-setup` stac
 - **Kafka Connect (#45):** all connector operations go through the control plane; Connect must not be
   exposed publicly. Set `KAFKA_CONNECT_USER`/`KAFKA_CONNECT_PASSWORD` to authenticate to a secured
   Connect REST endpoint (basic auth).
+- **Authentication (#55):** the API and UI require a JWT. Log in at `/login`; the token is sent as a
+  bearer header and a 401 bounces back to login. On first start an initial **admin** user is created
+  from `ADMIN_USERNAME`/`ADMIN_PASSWORD` (default `admin`/`admin` — **change immediately**). Set a
+  strong `JWT_SECRET` (≥32 bytes). Users carry a role (ADMIN/OPERATOR/VIEWER); enforcement is RBAC #56.

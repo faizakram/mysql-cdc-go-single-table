@@ -1,9 +1,10 @@
-import { Layout, Menu, Typography } from 'antd';
+import { Layout, Menu, Typography, Space, Dropdown, Avatar, Tag } from 'antd';
 import {
-  DashboardOutlined, DatabaseOutlined, ProjectOutlined,
+  DashboardOutlined, DatabaseOutlined, ProjectOutlined, UserOutlined, LogoutOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
+import { useAuth } from '../auth/AuthContext';
 
 const { Header, Sider, Content } = Layout;
 
@@ -16,6 +17,7 @@ const items = [
 export default function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, logout } = useAuth();
   const selected = items.find((i) => i.key !== '/' && location.pathname.startsWith(i.key))?.key
     ?? '/';
 
@@ -36,10 +38,22 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         />
       </Sider>
       <Layout>
-        <Header style={{ background: '#fff', paddingInline: 24 }}>
-          <Typography.Title level={4} style={{ margin: '16px 0' }}>
+        <Header style={{
+          background: '#fff', paddingInline: 24, display: 'flex',
+          alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <Typography.Title level={4} style={{ margin: 0 }}>
             Heterogeneous Database Migration (CDC)
           </Typography.Title>
+          <Dropdown
+            menu={{ items: [{ key: 'logout', icon: <LogoutOutlined />, label: 'Sign out', onClick: logout }] }}
+          >
+            <Space style={{ cursor: 'pointer' }}>
+              <Avatar size="small" icon={<UserOutlined />} />
+              <span>{user?.username}</span>
+              <Tag color="blue">{user?.role}</Tag>
+            </Space>
+          </Dropdown>
         </Header>
         <Content style={{ margin: 24 }}>{children}</Content>
       </Layout>

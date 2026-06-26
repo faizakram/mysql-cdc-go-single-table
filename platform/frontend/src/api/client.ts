@@ -1,11 +1,38 @@
 import axios from 'axios';
+import { tokenStore } from '../auth/token';
 import type {
   Connection, ConnectionRequest, TestResult,
   Project, ProjectRequest, Job, TableInfo, ColumnInfo, ColumnMapping, ProjectHealth,
-  ReconciliationRun,
+  ReconciliationRun, LoginResponse, MeResponse,
 } from './types';
 
 const http = axios.create({ baseURL: '/api/v1' });
+
+// Attach the bearer token to every request (#55).
+http.interceptors.request.use((config) => {
+  const t = tokenStore.get();
+  if (t) config.headers.Authorization = `Bearer ${t}`;
+  return config;
+});
+
+// On 401 (expired/invalid token), drop it and bounce to login — except on the login call itself.
+http.interceptors.response.use(
+  (r) => r,
+  (error) => {
+    const url: string = error?.config?.url ?? '';
+    if (error?.response?.status === 401 && !url.endsWith('/auth/login')) {
+      tokenStore.clear();
+      if (window.location.pathname !== '/login') window.location.assign('/login');
+    }
+    return Promise.reject(error);
+  },
+);
+
+export const authApi = {
+  login: (username: string, password: string) =>
+    http.post<LoginResponse>('/auth/login', { username, password }).then((r) => r.data),
+  me: () => http.get<MeResponse>('/auth/me').then((r) => r.data),
+};
 
 export const connectionsApi = {
   list: () => http.get<Connection[]>('/connections').then((r) => r.data),
