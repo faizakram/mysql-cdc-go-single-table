@@ -55,6 +55,9 @@ public class ConnectorConfigService {
         cfg.put("schema.history.internal.kafka.topic", "schema-changes." + mc.topicPrefix());
         cfg.put("snapshot.mode", mc.snapshotMode());
         cfg.put("snapshot.isolation.mode", "read_committed");
+        // Large-table snapshot tuning (#27): parallel workers + fetch size.
+        cfg.put("snapshot.max.threads", String.valueOf(mc.snapshotMaxThreads()));
+        cfg.put("snapshot.fetch.size", String.valueOf(mc.snapshotFetchSize()));
         cfg.put("decimal.handling.mode", "precise");
         cfg.put("time.precision.mode", "adaptive_time_microseconds");
         cfg.put("tombstones.on.delete", String.valueOf(hard));
@@ -118,7 +121,7 @@ public class ConnectorConfigService {
         cfg.put("insert.mode", "upsert");
         cfg.put("delete.enabled", String.valueOf(hard));     // consistent with the source tombstone setting
         cfg.put("primary.key.mode", "record_key");
-        cfg.put("schema.evolution", "basic");
+        cfg.put("schema.evolution", mc.schemaEvolution());
         cfg.put("quote.identifiers", "false");
 
         return payload(sinkName(p), cfg);

@@ -1,4 +1,4 @@
-import { Drawer, Form, Input, Select, Space, Button, App } from 'antd';
+import { Drawer, Form, Input, InputNumber, Select, Space, Button, App } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import { useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -26,6 +26,9 @@ export default function ConfigDrawer({ project, onClose }: { project: Project | 
       tableIncludeList: (c.tableIncludeList as string) ?? 'dbo.*',
       uuidColumns: asCsv(c.uuidColumns),
       jsonColumns: asCsv(c.jsonColumns),
+      schemaEvolution: (c.schemaEvolution as string) ?? 'basic',
+      snapshotMaxThreads: (c.snapshotMaxThreads as number) ?? 1,
+      snapshotFetchSize: (c.snapshotFetchSize as number) ?? 2000,
     });
   }, [project, form]);
 
@@ -46,6 +49,9 @@ export default function ConfigDrawer({ project, onClose }: { project: Project | 
           tableIncludeList: v.tableIncludeList,
           uuidColumns: v.uuidColumns,
           jsonColumns: v.jsonColumns,
+          schemaEvolution: v.schemaEvolution,
+          snapshotMaxThreads: v.snapshotMaxThreads,
+          snapshotFetchSize: v.snapshotFetchSize,
         },
       });
     },
@@ -100,6 +106,19 @@ export default function ConfigDrawer({ project, onClose }: { project: Project | 
           </Form.Item>
           <Form.Item name="jsonColumns" label="JSON columns" style={{ width: '50%' }}>
             <Input placeholder="metadata,settings" />
+          </Form.Item>
+        </Space.Compact>
+        <Space.Compact block>
+          <Form.Item name="schemaEvolution" label="Schema evolution" style={{ width: '34%' }}
+            tooltip="JDBC sink DDL evolution when source schema changes (#26)">
+            <Select options={[{ value: 'basic', label: 'basic' }, { value: 'none', label: 'none' }]} />
+          </Form.Item>
+          <Form.Item name="snapshotMaxThreads" label="Snapshot threads" style={{ width: '33%' }}
+            tooltip="Parallel snapshot workers for large tables (#27)">
+            <InputNumber min={1} max={32} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="snapshotFetchSize" label="Snapshot fetch size" style={{ width: '33%' }}>
+            <InputNumber min={100} max={100000} step={500} style={{ width: '100%' }} />
           </Form.Item>
         </Space.Compact>
       </Form>

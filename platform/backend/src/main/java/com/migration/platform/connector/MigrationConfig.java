@@ -15,7 +15,10 @@ public record MigrationConfig(
         String targetSchema,
         List<String> uuidColumns,
         List<String> jsonColumns,
-        int tasksMax
+        int tasksMax,
+        String schemaEvolution,   // sink DDL evolution: basic | none (#26)
+        int snapshotMaxThreads,   // parallel snapshot workers (#27)
+        int snapshotFetchSize     // snapshot row fetch size (#27)
 ) {
     public static MigrationConfig from(Map<String, Object> cfg, String projectName) {
         cfg = cfg == null ? Map.of() : cfg;
@@ -27,7 +30,10 @@ public record MigrationConfig(
                 str(cfg, "targetSchema", "public"),
                 strList(cfg, "uuidColumns"),
                 strList(cfg, "jsonColumns"),
-                intVal(cfg, "tasksMax", 1)
+                intVal(cfg, "tasksMax", 1),
+                str(cfg, "schemaEvolution", "basic"),
+                Math.max(1, intVal(cfg, "snapshotMaxThreads", 1)),
+                Math.max(1, intVal(cfg, "snapshotFetchSize", 2000))
         );
     }
 
