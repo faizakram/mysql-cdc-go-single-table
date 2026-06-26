@@ -1,5 +1,6 @@
 package com.migration.platform.auth;
 
+import com.migration.platform.audit.AuditService;
 import com.migration.platform.auth.dto.AuthDtos.LoginRequest;
 import com.migration.platform.auth.dto.AuthDtos.LoginResponse;
 import com.migration.platform.config.PlatformProperties;
@@ -21,12 +22,15 @@ public class AuthService {
     private final PasswordEncoder encoder;
     private final JwtService jwt;
     private final PlatformProperties props;
+    private final AuditService audit;
 
-    public AuthService(UserRepository users, PasswordEncoder encoder, JwtService jwt, PlatformProperties props) {
+    public AuthService(UserRepository users, PasswordEncoder encoder, JwtService jwt,
+                       PlatformProperties props, AuditService audit) {
         this.users = users;
         this.encoder = encoder;
         this.jwt = jwt;
         this.props = props;
+        this.audit = audit;
     }
 
     public LoginResponse login(LoginRequest req) {
@@ -34,6 +38,16 @@ public class AuthService {
                 .filter(AppUser::isEnabled)
                 .filter(u -> encoder.matches(req.password(), u.getPasswordHash()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password"));
+        String token = jwt.generate(user.getUsername(), user.getRole());
+        audit.recordAs(user.getUsername(), "LOGIN", user.getUsername(), java.util.Map.of());
+        return new LoginResponse(token, user.getUsername(), user.getRole().name(), jwt.ttlMinutes());
+    }
+
+    /** Re-issue a fresh token for the current (still-valid, enabled) user — token refresh (#55). */
+    public LoginResponse refresh(String username) {
+        AppUser user = users.findByUsername(username)
+                .filter(AppUser::isEnabled)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User no longer valid"));
         String token = jwt.generate(user.getUsername(), user.getRole());
         return new LoginResponse(token, user.getUsername(), user.getRole().name(), jwt.ttlMinutes());
     }

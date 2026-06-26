@@ -69,6 +69,9 @@ platform:
   scheduler:
     # How often to check for due schedules (#53). Spring 6-field cron. Default: every 30s.
     sweep-cron: ${SCHEDULER_SWEEP_CRON:*/30 * * * * *}
+  audit:
+    # How long to retain audit-log entries before the daily retention sweep deletes them (#57).
+    retention-days: ${AUDIT_RETENTION_DAYS:90}
   auth:
     # HMAC-SHA256 signing key (>= 32 bytes). MUST be overridden in any real environment (#55).
     jwt-secret: ${JWT_SECRET:dev-only-jwt-signing-secret-change-me-please-32b+}

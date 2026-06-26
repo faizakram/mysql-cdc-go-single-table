@@ -233,3 +233,19 @@ export interface OrchestratorStatus {
   runningTasks: OrchestratorTask[];
   queuedTasks: OrchestratorTask[];
 }
+
+export interface AuditEntry {
+  id: string;
+  actor: string;
+  action: string;
+  target?: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AuditPage {
+  content: AuditEntry[];
+  page: number;
+  size: number;
+  total: number;
+}

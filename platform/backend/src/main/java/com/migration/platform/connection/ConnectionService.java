@@ -1,5 +1,6 @@
 package com.migration.platform.connection;
 
+import com.migration.platform.audit.AuditService;
 import com.migration.platform.common.CryptoService;
 import com.migration.platform.common.NotFoundException;
 import com.migration.platform.connection.dto.ConnectionRequest;
@@ -10,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -18,11 +20,14 @@ public class ConnectionService {
     private final ConnectionRepository repo;
     private final CryptoService crypto;
     private final ConnectionTestService tester;
+    private final AuditService audit;
 
-    public ConnectionService(ConnectionRepository repo, CryptoService crypto, ConnectionTestService tester) {
+    public ConnectionService(ConnectionRepository repo, CryptoService crypto, ConnectionTestService tester,
+                             AuditService audit) {
         this.repo = repo;
         this.crypto = crypto;
         this.tester = tester;
+        this.audit = audit;
     }
 
     @Transactional(readOnly = true)
@@ -42,20 +47,25 @@ public class ConnectionService {
         }
         DbConnection c = new DbConnection();
         apply(c, req);
-        return ConnectionResponse.from(repo.save(c));
+        c = repo.save(c);
+        audit.record("CONNECTION_CREATE", c.getId().toString(), Map.of("name", req.name(), "type", req.dbType().name()));
+        return ConnectionResponse.from(c);
     }
 
     @Transactional
     public ConnectionResponse update(UUID id, ConnectionRequest req) {
         DbConnection c = find(id);
         apply(c, req);
-        return ConnectionResponse.from(repo.save(c));
+        c = repo.save(c);
+        audit.record("CONNECTION_UPDATE", id.toString(), Map.of("name", req.name()));
+        return ConnectionResponse.from(c);
     }
 
     @Transactional
     public void delete(UUID id) {
         if (!repo.existsById(id)) throw new NotFoundException("Connection " + id + " not found");
         repo.deleteById(id);
+        audit.record("CONNECTION_DELETE", id.toString(), Map.of());
     }
 
     /** Test by stored connection id (decrypts the secret transiently). */

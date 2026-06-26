@@ -25,6 +25,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setReady(true));
   }, []);
 
+  // Silent token refresh (#55): while logged in, swap the token for a fresh one periodically so an
+  // active session never expires mid-use. On failure the next API 401 bounces to login.
+  useEffect(() => {
+    if (!user) return;
+    const id = window.setInterval(() => {
+      if (!tokenStore.get()) return;
+      authApi.refresh().then((res) => tokenStore.set(res.token)).catch(() => { /* 401 handler bounces */ });
+    }, 15 * 60 * 1000); // every 15 min (token TTL is 8h)
+    return () => window.clearInterval(id);
+  }, [user]);
+
   const login = async (username: string, password: string) => {
     const res = await authApi.login(username, password);
     tokenStore.set(res.token);

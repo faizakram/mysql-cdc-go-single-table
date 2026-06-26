@@ -38,10 +38,11 @@ public class JobService {
     private final ConnectorConfigService configService;
     private final CryptoService crypto;
     private final TableStatusRepository tableStatus;
+    private final com.migration.platform.audit.AuditService audit;
 
     public JobService(JobRepository repo, ProjectRepository projects, ConnectionRepository connections,
                       KafkaConnectClient connect, ConnectorConfigService configService, CryptoService crypto,
-                      TableStatusRepository tableStatus) {
+                      TableStatusRepository tableStatus, com.migration.platform.audit.AuditService audit) {
         this.repo = repo;
         this.projects = projects;
         this.connections = connections;
@@ -49,6 +50,7 @@ public class JobService {
         this.configService = configService;
         this.crypto = crypto;
         this.tableStatus = tableStatus;
+        this.audit = audit;
     }
 
     @Transactional(readOnly = true)
@@ -114,6 +116,7 @@ public class JobService {
 
             project.setStatus(ProjectStatus.ACTIVE);
             projects.save(project);
+            audit.record("JOB_START", job.getProjectId().toString(), java.util.Map.of("jobId", id.toString()));
 
             // Persist per-table status for this run in the metadata store (replaces JSON, #19).
             tableStatus.deleteByJobId(job.getId());
@@ -144,6 +147,7 @@ public class JobService {
         JobTransitions.assertAllowed(JobTransitions.Action.PAUSE, job.getStatus());
         forEachConnector(job, connect::pause);
         job.setStatus(JobStatus.PAUSED);
+        audit.record("JOB_PAUSE", job.getProjectId().toString(), java.util.Map.of("jobId", id.toString()));
         return JobResponse.from(repo.save(job));
     }
 
@@ -153,6 +157,7 @@ public class JobService {
         JobTransitions.assertAllowed(JobTransitions.Action.RESUME, job.getStatus());
         forEachConnector(job, connect::resume);
         job.setStatus(JobStatus.RUNNING);
+        audit.record("JOB_RESUME", job.getProjectId().toString(), java.util.Map.of("jobId", id.toString()));
         return JobResponse.from(repo.save(job));
     }
 
@@ -166,6 +171,7 @@ public class JobService {
         });
         job.setStatus(JobStatus.STOPPED);
         job.setFinishedAt(OffsetDateTime.now());
+        audit.record("JOB_STOP", job.getProjectId().toString(), java.util.Map.of("jobId", id.toString()));
         return JobResponse.from(repo.save(job));
     }
 

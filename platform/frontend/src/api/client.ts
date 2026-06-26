@@ -4,7 +4,7 @@ import type {
   Connection, ConnectionRequest, TestResult,
   Project, ProjectRequest, Job, JobTableStatus, TableInfo, ColumnInfo, ColumnMapping, ProjectHealth,
   ReconciliationRun, LoginResponse, MeResponse, UserAdmin, RoleName, AlertItem, ConstraintApplyResult,
-  Schedule, ScheduleRequest, OrchestratorStatus,
+  Schedule, ScheduleRequest, OrchestratorStatus, AuditPage,
 } from './types';
 
 const http = axios.create({ baseURL: '/api/v1' });
@@ -32,6 +32,7 @@ http.interceptors.response.use(
 export const authApi = {
   login: (username: string, password: string) =>
     http.post<LoginResponse>('/auth/login', { username, password }).then((r) => r.data),
+  refresh: () => http.post<LoginResponse>('/auth/refresh').then((r) => r.data),
   me: () => http.get<MeResponse>('/auth/me').then((r) => r.data),
 };
 
@@ -134,4 +135,9 @@ export const schedulesApi = {
 
 export const orchestratorApi = {
   status: () => http.get<OrchestratorStatus>('/orchestrator/status').then((r) => r.data),
+};
+
+export const auditApi = {
+  list: (page = 0, size = 50) =>
+    http.get<AuditPage>('/audit', { params: { page, size } }).then((r) => r.data),
 };

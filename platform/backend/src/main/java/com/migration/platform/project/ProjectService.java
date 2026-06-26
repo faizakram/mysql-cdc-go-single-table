@@ -1,5 +1,6 @@
 package com.migration.platform.project;
 
+import com.migration.platform.audit.AuditService;
 import com.migration.platform.common.NotFoundException;
 import com.migration.platform.project.dto.ProjectRequest;
 import com.migration.platform.project.dto.ProjectResponse;
@@ -8,15 +9,18 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class ProjectService {
 
     private final ProjectRepository repo;
+    private final AuditService audit;
 
-    public ProjectService(ProjectRepository repo) {
+    public ProjectService(ProjectRepository repo, AuditService audit) {
         this.repo = repo;
+        this.audit = audit;
     }
 
     @Transactional(readOnly = true)
@@ -36,20 +40,25 @@ public class ProjectService {
         }
         MigrationProject p = new MigrationProject();
         apply(p, req);
-        return ProjectResponse.from(repo.save(p));
+        p = repo.save(p);
+        audit.record("PROJECT_CREATE", p.getId().toString(), Map.of("name", req.name()));
+        return ProjectResponse.from(p);
     }
 
     @Transactional
     public ProjectResponse update(UUID id, ProjectRequest req) {
         MigrationProject p = find(id);
         apply(p, req);
-        return ProjectResponse.from(repo.save(p));
+        p = repo.save(p);
+        audit.record("PROJECT_UPDATE", id.toString(), Map.of("name", req.name()));
+        return ProjectResponse.from(p);
     }
 
     @Transactional
     public void delete(UUID id) {
         if (!repo.existsById(id)) throw new NotFoundException("Project " + id + " not found");
         repo.deleteById(id);
+        audit.record("PROJECT_DELETE", id.toString(), Map.of());
     }
 
     private void apply(MigrationProject p, ProjectRequest req) {

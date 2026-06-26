@@ -1,7 +1,7 @@
 import { Layout, Menu, Typography, Space, Dropdown, Avatar, Tag, Badge } from 'antd';
 import {
   DashboardOutlined, DatabaseOutlined, ProjectOutlined, UserOutlined, LogoutOutlined, TeamOutlined,
-  BellOutlined, AreaChartOutlined,
+  BellOutlined, AreaChartOutlined, AuditOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -27,7 +27,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       key: '/alerts', icon: <BellOutlined />,
       label: <Space>Alerts<Badge count={firing.data?.firing ?? 0} size="small" /></Space>,
     },
-    ...(user?.role === 'ADMIN' ? [{ key: '/users', icon: <TeamOutlined />, label: 'Users' }] : []),
+    ...(user?.role === 'ADMIN' ? [
+      { key: '/users', icon: <TeamOutlined />, label: 'Users' },
+      { key: '/audit', icon: <AuditOutlined />, label: 'Audit log' },
+    ] : []),
     { key: 'grafana', icon: <AreaChartOutlined />, label: 'Grafana ↗' },
   ];
   const selected = items.find((i) => i.key !== '/' && location.pathname.startsWith(i.key))?.key

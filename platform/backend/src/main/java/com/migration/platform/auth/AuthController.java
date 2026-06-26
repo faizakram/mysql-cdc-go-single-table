@@ -22,6 +22,12 @@ public class AuthController {
         return auth.login(req);
     }
 
+    /** Exchange a still-valid token for a fresh one (#55), extending the session without re-login. */
+    @PostMapping("/refresh")
+    public LoginResponse refresh(Authentication authentication) {
+        return auth.refresh(authentication.getName());
+    }
+
     /** Current authenticated principal (from the validated JWT). */
     @GetMapping("/me")
     public MeResponse me(Authentication authentication) {

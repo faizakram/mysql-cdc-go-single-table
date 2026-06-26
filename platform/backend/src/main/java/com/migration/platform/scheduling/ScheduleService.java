@@ -35,15 +35,18 @@ public class ScheduleService {
     private final JobOrchestrator orchestrator;
     private final JobService jobs;
     private final ReconciliationService reconciliation;
+    private final com.migration.platform.audit.AuditService audit;
 
     public ScheduleService(JobScheduleRepository repo, ProjectRepository projects,
                            JobOrchestrator orchestrator, JobService jobs,
-                           ReconciliationService reconciliation) {
+                           ReconciliationService reconciliation,
+                           com.migration.platform.audit.AuditService audit) {
         this.repo = repo;
         this.projects = projects;
         this.orchestrator = orchestrator;
         this.jobs = jobs;
         this.reconciliation = reconciliation;
+        this.audit = audit;
     }
 
     @Transactional(readOnly = true)
@@ -61,7 +64,10 @@ public class ScheduleService {
         s.setCron(req.cron());
         s.setEnabled(req.enabled() == null || req.enabled());
         s.setNextRunAt(s.isEnabled() ? cron.next(OffsetDateTime.now()) : null);
-        return repo.save(s);
+        s = repo.save(s);
+        audit.record("SCHEDULE_CREATE", projectId.toString(),
+                java.util.Map.of("kind", req.kind().name(), "cron", req.cron()));
+        return s;
     }
 
     @Transactional
@@ -85,6 +91,7 @@ public class ScheduleService {
     public JobSchedule runNow(UUID id) {
         JobSchedule s = find(id);
         enqueue(s, "MANUAL");
+        audit.record("SCHEDULE_RUN_NOW", s.getProjectId().toString(), java.util.Map.of("kind", s.getKind().name()));
         return repo.save(s);
     }
 
