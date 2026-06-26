@@ -16,6 +16,8 @@ import ValidationDrawer from '../components/ValidationDrawer';
 import ConfigDrawer from '../components/ConfigDrawer';
 import ErrorsDrawer from '../components/ErrorsDrawer';
 import SchedulesDrawer from '../components/SchedulesDrawer';
+import EmptyState from '../components/EmptyState';
+import { ProjectOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 
 const STATUS_COLOR: Record<ProjectStatus, string> = {
@@ -147,7 +149,11 @@ export default function Projects() {
       }
     >
       <Table rowKey="id" loading={isLoading} dataSource={data} columns={columns} pagination={false}
-        scroll={{ x: 'max-content' }} />
+        scroll={{ x: 'max-content' }}
+        locale={{ emptyText: !isLoading && (
+          <EmptyState icon={<ProjectOutlined />} title="No projects yet"
+            description="Create a project to link a source and target connection, then run a migration." />
+        ) }} />
 
       <Modal
         title="New migration project"
