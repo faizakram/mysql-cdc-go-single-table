@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * full Dockerised pipeline test (MSSQL → Kafka → PG) tracked under #58 — to be run via failsafe/CI.
  */
 @SpringBootTest
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true) // runs in CI/with Docker; skipped otherwise
 class MetadataIntegrationIT {
 
     @Container
