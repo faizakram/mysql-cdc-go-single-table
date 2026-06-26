@@ -194,3 +194,42 @@ export interface Job {
   createdAt: string;
   updatedAt: string;
 }
+
+export type ScheduleKind = 'FULL_LOAD' | 'VALIDATION';
+
+export interface Schedule {
+  id: string;
+  projectId: string;
+  kind: ScheduleKind;
+  cron: string;
+  enabled: boolean;
+  lastRunAt?: string;
+  lastStatus?: string;
+  nextRunAt?: string;
+  createdAt: string;
+}
+
+export interface ScheduleRequest {
+  kind: ScheduleKind;
+  cron: string;
+  enabled?: boolean;
+}
+
+export interface OrchestratorTask {
+  taskId: string;
+  projectId: string;
+  projectName: string;
+  kind: ScheduleKind;
+  source: 'SCHEDULED' | 'MANUAL';
+  state: 'QUEUED' | 'RUNNING';
+  enqueuedAt: string;
+  startedAt?: string;
+}
+
+export interface OrchestratorStatus {
+  maxConcurrent: number;
+  running: number;
+  queued: number;
+  runningTasks: OrchestratorTask[];
+  queuedTasks: OrchestratorTask[];
+}

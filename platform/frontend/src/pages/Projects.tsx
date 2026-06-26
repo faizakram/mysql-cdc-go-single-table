@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ThunderboltOutlined, TableOutlined, SwapOutlined,
-  CheckCircleOutlined, SettingOutlined, ProfileOutlined,
+  CheckCircleOutlined, SettingOutlined, ProfileOutlined, ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { projectsApi, connectionsApi } from '../api/client';
@@ -15,6 +15,7 @@ import MappingDrawer from '../components/MappingDrawer';
 import ValidationDrawer from '../components/ValidationDrawer';
 import ConfigDrawer from '../components/ConfigDrawer';
 import ErrorsDrawer from '../components/ErrorsDrawer';
+import SchedulesDrawer from '../components/SchedulesDrawer';
 import { useAuth } from '../auth/AuthContext';
 
 const STATUS_COLOR: Record<ProjectStatus, string> = {
@@ -47,6 +48,7 @@ export default function Projects() {
   const [validateFor, setValidateFor] = useState<Project | null>(null);
   const [configFor, setConfigFor] = useState<Project | null>(null);
   const [errorsFor, setErrorsFor] = useState<Project | null>(null);
+  const [schedulesFor, setSchedulesFor] = useState<Project | null>(null);
   const [form] = Form.useForm<FormValues>();
 
   const { data, isLoading } = useQuery({ queryKey: ['projects'], queryFn: projectsApi.list });
@@ -118,6 +120,8 @@ export default function Projects() {
           <Button size="small" icon={<CheckCircleOutlined />}
             disabled={!canWrite || !row.sourceConnectionId || !row.targetConnectionId}
             onClick={() => setValidateFor(row)}>Validate</Button>
+          <Button size="small" icon={<ClockCircleOutlined />}
+            onClick={() => setSchedulesFor(row)}>Schedules</Button>
           <Button size="small" type="primary" ghost icon={<ThunderboltOutlined />}
             disabled={!canWrite}
             onClick={() => setRunsFor(row)}>Runs</Button>
@@ -230,6 +234,7 @@ export default function Projects() {
       <ValidationDrawer project={validateFor} onClose={() => setValidateFor(null)} />
       <ConfigDrawer project={configFor} onClose={() => setConfigFor(null)} />
       <ErrorsDrawer project={errorsFor} onClose={() => setErrorsFor(null)} />
+      <SchedulesDrawer project={schedulesFor} onClose={() => setSchedulesFor(null)} />
     </Card>
   );
 }
