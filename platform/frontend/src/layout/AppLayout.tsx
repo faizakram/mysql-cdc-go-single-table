@@ -1,6 +1,6 @@
 import { Layout, Menu, Typography, Space, Dropdown, Avatar, Tag } from 'antd';
 import {
-  DashboardOutlined, DatabaseOutlined, ProjectOutlined, UserOutlined, LogoutOutlined,
+  DashboardOutlined, DatabaseOutlined, ProjectOutlined, UserOutlined, LogoutOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
@@ -8,16 +8,17 @@ import { useAuth } from '../auth/AuthContext';
 
 const { Header, Sider, Content } = Layout;
 
-const items = [
-  { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
-  { key: '/projects', icon: <ProjectOutlined />, label: 'Projects' },
-  { key: '/connections', icon: <DatabaseOutlined />, label: 'Connections' },
-];
-
 export default function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+
+  const items = [
+    { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
+    { key: '/projects', icon: <ProjectOutlined />, label: 'Projects' },
+    { key: '/connections', icon: <DatabaseOutlined />, label: 'Connections' },
+    ...(user?.role === 'ADMIN' ? [{ key: '/users', icon: <TeamOutlined />, label: 'Users' }] : []),
+  ];
   const selected = items.find((i) => i.key !== '/' && location.pathname.startsWith(i.key))?.key
     ?? '/';
 

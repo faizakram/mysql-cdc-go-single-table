@@ -4,6 +4,7 @@ import AppLayout from './layout/AppLayout';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import Connections from './pages/Connections';
+import Users from './pages/Users';
 import Login from './pages/Login';
 import { useAuth } from './auth/AuthContext';
 
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/connections" element={<Connections />} />
+        <Route path="/users" element={user.role === 'ADMIN' ? <Users /> : <Navigate to="/" replace />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
       </Routes>
     </AppLayout>

@@ -40,6 +40,12 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/login").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
                 .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
+                // RBAC (#56): user administration is ADMIN-only.
+                .requestMatchers("/api/v1/users/**").hasRole("ADMIN")
+                // Reads are open to any authenticated role (VIEWER and up)…
+                .requestMatchers(HttpMethod.GET, "/api/**").hasAnyRole("VIEWER", "OPERATOR", "ADMIN")
+                // …all mutating/operational calls require OPERATOR or ADMIN.
+                .requestMatchers("/api/**").hasAnyRole("OPERATOR", "ADMIN")
                 .anyRequest().authenticated())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
             .httpBasic(AbstractHttpConfigurer::disable)

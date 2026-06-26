@@ -10,6 +10,16 @@ export interface MeResponse {
   role: string;
 }
 
+export type RoleName = 'ADMIN' | 'OPERATOR' | 'VIEWER';
+
+export interface UserAdmin {
+  id: string;
+  username: string;
+  role: RoleName;
+  enabled: boolean;
+  createdAt: string;
+}
+
 export type DbType = 'SQLSERVER' | 'POSTGRESQL';
 
 export type ProjectStatus = 'DRAFT' | 'READY' | 'ACTIVE' | 'ARCHIVED';

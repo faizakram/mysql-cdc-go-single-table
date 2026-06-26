@@ -13,6 +13,7 @@ import JobsDrawer from '../components/JobsDrawer';
 import SchemaDrawer from '../components/SchemaDrawer';
 import MappingDrawer from '../components/MappingDrawer';
 import ValidationDrawer from '../components/ValidationDrawer';
+import { useAuth } from '../auth/AuthContext';
 
 const STATUS_COLOR: Record<ProjectStatus, string> = {
   DRAFT: 'default', READY: 'blue', ACTIVE: 'green', ARCHIVED: 'gold',
@@ -34,6 +35,8 @@ interface FormValues {
 
 export default function Projects() {
   const { message, modal } = App.useApp();
+  const { user } = useAuth();
+  const canWrite = user?.role !== 'VIEWER';
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [runsFor, setRunsFor] = useState<Project | null>(null);
@@ -100,17 +103,18 @@ export default function Projects() {
       render: (_: unknown, row: Project) => (
         <Space>
           <Button size="small" icon={<TableOutlined />}
-            disabled={!row.sourceConnectionId}
+            disabled={!canWrite || !row.sourceConnectionId}
             onClick={() => setTablesFor(row)}>Tables</Button>
           <Button size="small" icon={<SwapOutlined />}
-            disabled={!row.sourceConnectionId}
+            disabled={!canWrite || !row.sourceConnectionId}
             onClick={() => setMappingFor(row)}>Mapping</Button>
           <Button size="small" icon={<CheckCircleOutlined />}
-            disabled={!row.sourceConnectionId || !row.targetConnectionId}
+            disabled={!canWrite || !row.sourceConnectionId || !row.targetConnectionId}
             onClick={() => setValidateFor(row)}>Validate</Button>
           <Button size="small" type="primary" ghost icon={<ThunderboltOutlined />}
+            disabled={!canWrite}
             onClick={() => setRunsFor(row)}>Runs</Button>
-          <Button size="small" danger icon={<DeleteOutlined />}
+          <Button size="small" danger icon={<DeleteOutlined />} disabled={!canWrite}
             onClick={() => modal.confirm({
               title: `Delete project "${row.name}"?`,
               onOk: () => remove.mutate(row.id),
@@ -124,7 +128,7 @@ export default function Projects() {
     <Card
       title="Migration projects"
       extra={
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+        <Button type="primary" icon={<PlusOutlined />} disabled={!canWrite} onClick={() => setOpen(true)}>
           New project
         </Button>
       }

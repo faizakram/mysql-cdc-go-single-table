@@ -5,6 +5,7 @@ import {
 import { PlusOutlined, ThunderboltOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { connectionsApi } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import type { Connection, ConnectionRequest, DbType } from '../api/types';
 
 const DEFAULT_PORT: Record<DbType, number> = { SQLSERVER: 1433, POSTGRESQL: 5432 };
@@ -31,6 +32,8 @@ function buildRequest(v: ConnForm): ConnectionRequest {
 
 export default function Connections() {
   const { message, modal } = App.useApp();
+  const { user } = useAuth();
+  const canWrite = user?.role !== 'VIEWER';
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm<ConnForm>();
@@ -87,6 +90,7 @@ export default function Connections() {
           <Button
             size="small"
             icon={<ThunderboltOutlined />}
+            disabled={!canWrite}
             onClick={async () => {
               const res = await connectionsApi.test(row.id);
               res.success
@@ -97,7 +101,7 @@ export default function Connections() {
             Test
           </Button>
           <Button
-            size="small" danger icon={<DeleteOutlined />}
+            size="small" danger icon={<DeleteOutlined />} disabled={!canWrite}
             onClick={() => modal.confirm({
               title: `Delete connection "${row.name}"?`,
               onOk: () => remove.mutate(row.id),
@@ -112,7 +116,7 @@ export default function Connections() {
     <Card
       title="Database connections"
       extra={
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+        <Button type="primary" icon={<PlusOutlined />} disabled={!canWrite} onClick={() => setOpen(true)}>
           New connection
         </Button>
       }

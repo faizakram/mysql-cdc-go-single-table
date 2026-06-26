@@ -3,7 +3,7 @@ import { tokenStore } from '../auth/token';
 import type {
   Connection, ConnectionRequest, TestResult,
   Project, ProjectRequest, Job, TableInfo, ColumnInfo, ColumnMapping, ProjectHealth,
-  ReconciliationRun, LoginResponse, MeResponse,
+  ReconciliationRun, LoginResponse, MeResponse, UserAdmin, RoleName,
 } from './types';
 
 const http = axios.create({ baseURL: '/api/v1' });
@@ -44,6 +44,15 @@ export const connectionsApi = {
   test: (id: string) => http.post<TestResult>(`/connections/${id}/test`).then((r) => r.data),
   testAdhoc: (body: ConnectionRequest) =>
     http.post<TestResult>('/connections/test', body).then((r) => r.data),
+};
+
+export const usersApi = {
+  list: () => http.get<UserAdmin[]>('/users').then((r) => r.data),
+  create: (body: { username: string; password: string; role: RoleName }) =>
+    http.post<UserAdmin>('/users', body).then((r) => r.data),
+  update: (id: string, body: { role?: RoleName; enabled?: boolean; password?: string }) =>
+    http.patch<UserAdmin>(`/users/${id}`, body).then((r) => r.data),
+  remove: (id: string) => http.delete(`/users/${id}`).then(() => undefined),
 };
 
 export const reconciliationApi = {
