@@ -1,16 +1,12 @@
 package com.migration.platform.job;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "migration_job")
-@Getter
-@Setter
 public class MigrationJob {
 
     @Id
@@ -58,4 +54,25 @@ public class MigrationJob {
     void onUpdate() {
         updatedAt = OffsetDateTime.now();
     }
+
+    public UUID getId() { return id; }
+    public void setId(UUID id) { this.id = id; }
+    public UUID getProjectId() { return projectId; }
+    public void setProjectId(UUID projectId) { this.projectId = projectId; }
+    public JobStatus getStatus() { return status; }
+    public void setStatus(JobStatus status) { this.status = status; }
+    public String getPhase() { return phase; }
+    public void setPhase(String phase) { this.phase = phase; }
+    public String getSourceConnectorName() { return sourceConnectorName; }
+    public void setSourceConnectorName(String sourceConnectorName) { this.sourceConnectorName = sourceConnectorName; }
+    public String getSinkConnectorName() { return sinkConnectorName; }
+    public void setSinkConnectorName(String sinkConnectorName) { this.sinkConnectorName = sinkConnectorName; }
+    public String getError() { return error; }
+    public void setError(String error) { this.error = error; }
+    public OffsetDateTime getStartedAt() { return startedAt; }
+    public void setStartedAt(OffsetDateTime startedAt) { this.startedAt = startedAt; }
+    public OffsetDateTime getFinishedAt() { return finishedAt; }
+    public void setFinishedAt(OffsetDateTime finishedAt) { this.finishedAt = finishedAt; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

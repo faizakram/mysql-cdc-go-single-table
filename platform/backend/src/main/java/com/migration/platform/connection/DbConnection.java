@@ -1,8 +1,6 @@
 package com.migration.platform.connection;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -13,8 +11,6 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "db_connection")
-@Getter
-@Setter
 public class DbConnection {
 
     @Id
@@ -65,4 +61,25 @@ public class DbConnection {
     void onUpdate() {
         updatedAt = OffsetDateTime.now();
     }
+
+    public UUID getId() { return id; }
+    public void setId(UUID id) { this.id = id; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public DbType getDbType() { return dbType; }
+    public void setDbType(DbType dbType) { this.dbType = dbType; }
+    public String getHost() { return host; }
+    public void setHost(String host) { this.host = host; }
+    public Integer getPort() { return port; }
+    public void setPort(Integer port) { this.port = port; }
+    public String getDatabaseName() { return databaseName; }
+    public void setDatabaseName(String databaseName) { this.databaseName = databaseName; }
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
+    public String getPasswordEnc() { return passwordEnc; }
+    public void setPasswordEnc(String passwordEnc) { this.passwordEnc = passwordEnc; }
+    public Map<String, Object> getOptions() { return options; }
+    public void setOptions(Map<String, Object> options) { this.options = options; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

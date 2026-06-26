@@ -32,7 +32,8 @@ public class TypeMappingService {
                 .toList();
     }
 
-    private ColumnMapping propose(ColumnInfo c) {
+    /** Pure mapping for a single column — exposed for unit testing. */
+    public ColumnMapping propose(ColumnInfo c) {
         String src = c.dataType() == null ? "" : c.dataType().toLowerCase();
         String pg = mapType(src, c.size());
         String semantic = detectSemantic(src, c.name());

@@ -78,6 +78,17 @@ Set `KAFKA_CONNECT_URL` to your running Kafka Connect (the `debezium-setup` stac
 | `POST` | `/api/v1/jobs/{id}/{start\|pause\|resume\|stop}` | Job lifecycle |
 | `GET` | `/api/v1/connect/connectors` … | Kafka Connect proxy |
 
+## Testing
+- **Unit tests** (`cd backend && mvn test`) — connector-config generation (SOFT/HARD delete,
+  encrypt, topics.regex, transforms), type-mapping engine, migration config, AES-GCM crypto, JWT.
+  No infrastructure required.
+- **Integration tests** (`*IT`, require Docker) — `MetadataIntegrationIT` boots a real PostgreSQL via
+  Testcontainers and exercises the metadata layer (Flyway + JPA + encrypted secrets). Not run by
+  `mvn test`; wire up failsafe/CI to run them (#58/#59).
+
+> Note: the backend deliberately uses no Lombok (hand-written accessors) for clean compilation across
+> JDK versions.
+
 ## Security note
 - **Secrets:** connection passwords are encrypted at rest (AES-256-GCM) and never returned by the API.
   The dev crypto key **must** be overridden via `PLATFORM_CRYPTO_KEY` in any real environment, and
