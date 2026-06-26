@@ -150,6 +150,16 @@ export interface ReconciliationRun {
   results: ReconciliationResult[];
 }
 
+export interface JobTableStatus {
+  schemaName: string;
+  tableName: string;
+  phase: string;
+  status: string;
+  rowsSynced: number;
+  error: string | null;
+  updatedAt: string;
+}
+
 export interface Job {
   id: string;
   projectId: string;

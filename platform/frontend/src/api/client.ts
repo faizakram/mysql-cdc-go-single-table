@@ -2,7 +2,7 @@ import axios from 'axios';
 import { tokenStore } from '../auth/token';
 import type {
   Connection, ConnectionRequest, TestResult,
-  Project, ProjectRequest, Job, TableInfo, ColumnInfo, ColumnMapping, ProjectHealth,
+  Project, ProjectRequest, Job, JobTableStatus, TableInfo, ColumnInfo, ColumnMapping, ProjectHealth,
   ReconciliationRun, LoginResponse, MeResponse, UserAdmin, RoleName,
 } from './types';
 
@@ -102,6 +102,8 @@ export const jobsApi = {
     http.post<Job>(`/projects/${projectId}/jobs`).then((r) => r.data),
   preview: (projectId: string) =>
     http.get<{ source: unknown; sink: unknown }>(`/projects/${projectId}/connector-preview`).then((r) => r.data),
+  tables: (jobId: string) =>
+    http.get<JobTableStatus[]>(`/jobs/${jobId}/tables`).then((r) => r.data),
   start: (id: string) => http.post<Job>(`/jobs/${id}/start`).then((r) => r.data),
   pause: (id: string) => http.post<Job>(`/jobs/${id}/pause`).then((r) => r.data),
   resume: (id: string) => http.post<Job>(`/jobs/${id}/resume`).then((r) => r.data),
