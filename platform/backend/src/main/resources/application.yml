@@ -55,6 +55,9 @@ platform:
     webhook-url: ${ALERTS_WEBHOOK_URL:}
     # How often to check connector health for alerting. Default: every 2 minutes.
     monitor-cron: ${ALERTS_MONITOR_CRON:0 */2 * * * *}
+    # Raise a LAG alert when a project's sink consumer-group lag exceeds this many records (#28).
+    # 0 disables lag alerting.
+    lag-threshold: ${ALERTS_LAG_THRESHOLD:0}
   auth:
     # HMAC-SHA256 signing key (>= 32 bytes). MUST be overridden in any real environment (#55).
     jwt-secret: ${JWT_SECRET:dev-only-jwt-signing-secret-change-me-please-32b+}

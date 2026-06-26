@@ -107,6 +107,32 @@ class ConnectorConfigServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void snapshotTuningAndSchemaEvolutionComeFromConfig() {
+        Map<String, Object> cfg = new HashMap<>();
+        cfg.put("snapshotMaxThreads", 4);
+        cfg.put("snapshotFetchSize", 5000);
+        cfg.put("schemaEvolution", "none");
+        MigrationProject p = project(cfg);
+
+        Map<String, Object> source = (Map<String, Object>) svc.sourceConnector(p, src(), "pw").get("config");
+        assertThat(source).containsEntry("snapshot.max.threads", "4").containsEntry("snapshot.fetch.size", "5000");
+
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        assertThat(sink).containsEntry("schema.evolution", "none");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void defaultsSchemaEvolutionBasicAndSingleSnapshotThread() {
+        MigrationProject p = project(new HashMap<>());
+        Map<String, Object> source = (Map<String, Object>) svc.sourceConnector(p, src(), "pw").get("config");
+        assertThat(source).containsEntry("snapshot.max.threads", "1");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        assertThat(sink).containsEntry("schema.evolution", "basic");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void uuidAndJsonColumnsFlowIntoTypeConversion() {
         Map<String, Object> cfg = new HashMap<>();
         cfg.put("uuidColumns", "user_id,session_id");

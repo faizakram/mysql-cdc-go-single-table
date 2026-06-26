@@ -20,10 +20,12 @@ public class AlertMonitor {
 
     private final MonitoringService monitoring;
     private final AlertService alerts;
+    private final AlertProperties props;
 
-    public AlertMonitor(MonitoringService monitoring, AlertService alerts) {
+    public AlertMonitor(MonitoringService monitoring, AlertService alerts, AlertProperties props) {
         this.monitoring = monitoring;
         this.alerts = alerts;
+        this.props = props;
     }
 
     @Scheduled(cron = "${platform.alerts.monitor-cron}")
@@ -39,6 +41,15 @@ public class AlertMonitor {
                     } else if ("RUNNING".equals(c.state())) {
                         alerts.resolve(dedup);
                     }
+                }
+                // Lag-threshold alerting (#28).
+                String lagDedup = "lag:" + p.projectId();
+                if (props.lagThreshold() > 0 && p.lagRecords() != null && p.lagRecords() > props.lagThreshold()) {
+                    alerts.raise(lagDedup, "WARNING", "LAG",
+                            "Sink lag for project '" + p.projectName() + "' is " + p.lagRecords()
+                                    + " records (threshold " + props.lagThreshold() + ")", p.projectId());
+                } else if (p.lagRecords() != null) {
+                    alerts.resolve(lagDedup);
                 }
             }
         } catch (Exception e) {

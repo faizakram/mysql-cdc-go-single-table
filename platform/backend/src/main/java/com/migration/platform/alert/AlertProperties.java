@@ -7,4 +7,4 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * {@code webhookUrl} accepts any Slack/Teams/custom incoming-webhook URL (JSON {"text": ...}).
  */
 @ConfigurationProperties(prefix = "platform.alerts")
-public record AlertProperties(String webhookUrl, String monitorCron) {}
+public record AlertProperties(String webhookUrl, String monitorCron, long lagThreshold) {}
