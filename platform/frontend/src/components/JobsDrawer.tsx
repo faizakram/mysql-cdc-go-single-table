@@ -8,7 +8,33 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { jobsApi } from '../api/client';
-import type { Job, JobStatus, Project } from '../api/types';
+import type { Job, JobStatus, JobTableStatus, Project } from '../api/types';
+
+const TS_COLOR: Record<string, string> = {
+  PENDING: 'default', IN_PROGRESS: 'processing', COMPLETED: 'green', FAILED: 'red',
+};
+
+function JobTables({ jobId }: { jobId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['job-tables', jobId],
+    queryFn: () => jobsApi.tables(jobId),
+  });
+  if (!isLoading && (!data || data.length === 0)) {
+    return <Typography.Text type="secondary">No per-table status (start the run to populate).</Typography.Text>;
+  }
+  return (
+    <Table<JobTableStatus>
+      size="small" rowKey={(t) => `${t.schemaName}.${t.tableName}`} loading={isLoading}
+      dataSource={data} pagination={false}
+      columns={[
+        { title: 'Table', render: (_: unknown, t: JobTableStatus) => `${t.schemaName}.${t.tableName}` },
+        { title: 'Phase', dataIndex: 'phase' },
+        { title: 'Status', dataIndex: 'status', render: (s: string) => <Tag color={TS_COLOR[s] ?? 'default'}>{s}</Tag> },
+        { title: 'Rows', dataIndex: 'rowsSynced' },
+      ]}
+    />
+  );
+}
 
 const STATUS_COLOR: Record<JobStatus, string> = {
   CREATED: 'default', SNAPSHOT: 'processing', RUNNING: 'green',
@@ -102,7 +128,8 @@ export default function JobsDrawer({ project, onClose }: { project: Project | nu
     >
       {jobs.data && jobs.data.length === 0
         ? <Empty description="No runs yet — create one, then Start to deploy the connectors." />
-        : <Table rowKey="id" loading={jobs.isLoading} dataSource={jobs.data} columns={columns} pagination={false} />}
+        : <Table rowKey="id" loading={jobs.isLoading} dataSource={jobs.data} columns={columns} pagination={false}
+            expandable={{ expandedRowRender: (j) => <JobTables jobId={j.id} /> }} />}
 
       <Modal title="Connector preview (secrets masked)" open={preview !== null}
         footer={null} width={760} onCancel={() => setPreview(null)}>

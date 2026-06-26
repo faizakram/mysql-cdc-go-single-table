@@ -1,6 +1,7 @@
 package com.migration.platform.job;
 
 import com.migration.platform.job.dto.JobResponse;
+import com.migration.platform.job.dto.TableStatusResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -38,6 +39,12 @@ public class JobController {
     @GetMapping("/jobs/{id}")
     public JobResponse get(@PathVariable UUID id) {
         return service.get(id);
+    }
+
+    /** Per-table status for a run, from the metadata store (#19). */
+    @GetMapping("/jobs/{id}/tables")
+    public List<TableStatusResponse> tables(@PathVariable UUID id) {
+        return service.tablesForJob(id);
     }
 
     @PostMapping("/jobs/{id}/start")

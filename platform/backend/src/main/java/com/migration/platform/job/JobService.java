@@ -7,6 +7,7 @@ import com.migration.platform.connection.ConnectionRepository;
 import com.migration.platform.connection.DbConnection;
 import com.migration.platform.connector.ConnectorConfigService;
 import com.migration.platform.job.dto.JobResponse;
+import com.migration.platform.job.dto.TableStatusResponse;
 import com.migration.platform.project.MigrationProject;
 import com.migration.platform.project.ProjectRepository;
 import com.migration.platform.project.ProjectStatus;
@@ -36,15 +37,23 @@ public class JobService {
     private final KafkaConnectClient connect;
     private final ConnectorConfigService configService;
     private final CryptoService crypto;
+    private final TableStatusRepository tableStatus;
 
     public JobService(JobRepository repo, ProjectRepository projects, ConnectionRepository connections,
-                      KafkaConnectClient connect, ConnectorConfigService configService, CryptoService crypto) {
+                      KafkaConnectClient connect, ConnectorConfigService configService, CryptoService crypto,
+                      TableStatusRepository tableStatus) {
         this.repo = repo;
         this.projects = projects;
         this.connections = connections;
         this.connect = connect;
         this.configService = configService;
         this.crypto = crypto;
+        this.tableStatus = tableStatus;
+    }
+
+    @Transactional(readOnly = true)
+    public List<TableStatusResponse> tablesForJob(UUID jobId) {
+        return tableStatus.findByJobIdOrderByTableName(jobId).stream().map(TableStatusResponse::from).toList();
     }
 
     @Transactional(readOnly = true)
@@ -105,6 +114,19 @@ public class JobService {
 
             project.setStatus(ProjectStatus.ACTIVE);
             projects.save(project);
+
+            // Persist per-table status for this run in the metadata store (replaces JSON, #19).
+            tableStatus.deleteByJobId(job.getId());
+            for (String fq : selectedTables(project)) {
+                String[] parts = fq.split("\\.", 2);
+                TableStatus ts = new TableStatus();
+                ts.setJobId(job.getId());
+                ts.setSchemaName(parts.length == 2 ? parts[0] : "dbo");
+                ts.setTableName(parts.length == 2 ? parts[1] : parts[0]);
+                ts.setPhase("CDC");
+                ts.setStatus("IN_PROGRESS");
+                tableStatus.save(ts);
+            }
         } catch (IllegalArgumentException e) {
             throw e; // surfaced as 400 (e.g. missing connections)
         } catch (Exception e) {
@@ -150,6 +172,14 @@ public class JobService {
     private void forEachConnector(MigrationJob job, java.util.function.Consumer<String> op) {
         if (job.getSourceConnectorName() != null) op.accept(job.getSourceConnectorName());
         if (job.getSinkConnectorName() != null) op.accept(job.getSinkConnectorName());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> selectedTables(MigrationProject p) {
+        Object v = p.getConfig() == null ? null : p.getConfig().get("selectedTables");
+        if (v instanceof List<?> list) return list.stream().map(Object::toString).toList();
+        if (v instanceof String s && !s.isBlank()) return List.of(s.split("\\s*,\\s*"));
+        return List.of();
     }
 
     private MigrationProject requireProject(UUID id) {
