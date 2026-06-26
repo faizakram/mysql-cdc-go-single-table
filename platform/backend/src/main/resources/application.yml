@@ -36,6 +36,15 @@ platform:
     embedded-data-dir: ${PLATFORM_METADATA_DATA_DIR:${user.home}/.migration-platform/pgdata}
   connect:
     base-url: ${KAFKA_CONNECT_URL:http://localhost:8083}
+    secrets:
+      # How DB passwords are placed into generated connector configs (#43):
+      #   inline (default) — plaintext in the config (rely on locked-down Connect REST, #45)
+      #   file  — emit ${file:<path>/<role>.properties:password}, resolved by Connect's
+      #           FileConfigProvider from a mounted secret (secrets manager / K8s secret)
+      #   env   — emit ${env:CDC_SECRET_<ROLE>_PASSWORD}, resolved by EnvVarConfigProvider
+      mode: ${CONNECT_SECRET_MODE:inline}
+      file-path: ${CONNECT_SECRET_FILE_PATH:/opt/connect-secrets}
+      env-prefix: ${CONNECT_SECRET_ENV_PREFIX:CDC_SECRET_}
     # Bootstrap servers as seen FROM Kafka Connect (used in generated source schema-history config).
     kafka-bootstrap: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
     # Basic-auth credentials for a secured Connect REST endpoint (#45). Leave blank for none.

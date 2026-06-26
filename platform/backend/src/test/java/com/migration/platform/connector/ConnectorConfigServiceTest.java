@@ -13,12 +13,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ConnectorConfigServiceTest {
 
+    private static PlatformProperties platformProps() {
+        return new PlatformProperties(
+                new PlatformProperties.Connect("http://connect:8083", "kafka:9092", null, null),
+                new PlatformProperties.Crypto("x"), new PlatformProperties.Cors("*"),
+                new PlatformProperties.Auth("s", 1, "a", "b"),
+                new PlatformProperties.Reconciliation("0 0 0 * * *"));
+    }
+
     private final ConnectorConfigService svc = new ConnectorConfigService(
-            new PlatformProperties(
-                    new PlatformProperties.Connect("http://connect:8083", "kafka:9092", null, null),
-                    new PlatformProperties.Crypto("x"), new PlatformProperties.Cors("*"),
-                    new PlatformProperties.Auth("s", 1, "a", "b"),
-                    new PlatformProperties.Reconciliation("0 0 0 * * *")));
+            platformProps(), new ConnectorSecretProperties("inline", null, null));
 
     private MigrationProject project(Map<String, Object> config) {
         MigrationProject p = new MigrationProject();
@@ -39,6 +43,30 @@ class ConnectorConfigServiceTest {
         c.setDbType(DbType.POSTGRESQL);
         c.setHost("pg"); c.setPort(5432); c.setDatabaseName("target_db"); c.setUsername("postgres");
         return c;
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void inlineModePutsPlaintextPasswordIntoConfig() {
+        MigrationProject p = project(new HashMap<>());
+        Map<String, Object> src = (Map<String, Object>) svc.sourceConnector(p, src(), "s3cr3t").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "t0ps3cret", "Employees").get("config");
+        assertThat(src).containsEntry("database.password", "s3cr3t");
+        assertThat(sink).containsEntry("connection.password", "t0ps3cret");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fileModeEmitsProviderReferenceNotPlaintext() {
+        // #43: externalized secrets — the plaintext must NOT appear; a provider reference does.
+        ConnectorConfigService externalized = new ConnectorConfigService(
+                platformProps(), new ConnectorSecretProperties("file", "/opt/connect-secrets", null));
+        MigrationProject p = project(new HashMap<>());
+        Map<String, Object> src = (Map<String, Object>) externalized.sourceConnector(p, src(), "s3cr3t").get("config");
+        Map<String, Object> sink = (Map<String, Object>) externalized.sinkConnector(p, tgt(), "s3cr3t", "Employees").get("config");
+        assertThat(src.get("database.password")).isEqualTo("${file:/opt/connect-secrets/source.properties:password}");
+        assertThat(sink.get("connection.password")).isEqualTo("${file:/opt/connect-secrets/sink.properties:password}");
+        assertThat(src.toString()).doesNotContain("s3cr3t");
     }
 
     @Test

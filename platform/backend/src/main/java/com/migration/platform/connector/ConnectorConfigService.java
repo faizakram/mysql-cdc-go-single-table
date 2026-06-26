@@ -17,9 +17,11 @@ import java.util.Map;
 public class ConnectorConfigService {
 
     private final PlatformProperties props;
+    private final ConnectorSecretProperties secrets;
 
-    public ConnectorConfigService(PlatformProperties props) {
+    public ConnectorConfigService(PlatformProperties props, ConnectorSecretProperties secrets) {
         this.props = props;
+        this.secrets = secrets;
     }
 
     public String sourceName(MigrationProject p) {
@@ -41,7 +43,7 @@ public class ConnectorConfigService {
         cfg.put("database.hostname", src.getHost());
         cfg.put("database.port", String.valueOf(src.getPort()));
         cfg.put("database.user", src.getUsername());
-        cfg.put("database.password", srcPassword);
+        cfg.put("database.password", secrets.passwordValue("source", srcPassword));
         cfg.put("database.names", src.getDatabaseName());
         // TLS driven by the connection (#44): secure by default; opt out only for dev.
         boolean encrypt = optBool(src.getOptions(), "encrypt", true);
@@ -81,7 +83,7 @@ public class ConnectorConfigService {
         cfg.put("connection.url", "jdbc:postgresql://" + tgt.getHost() + ":" + tgt.getPort()
                 + "/" + tgt.getDatabaseName() + "?currentSchema=" + mc.targetSchema() + sslParam);
         cfg.put("connection.username", tgt.getUsername());
-        cfg.put("connection.password", tgtPassword);
+        cfg.put("connection.password", secrets.passwordValue("sink", tgtPassword));
 
         // <prefix>.<sourceDb>.dbo.<table>  ->  <table>
         String topicsRegex = prefix + "\\." + sourceDbName + "\\.dbo\\.(.*)";

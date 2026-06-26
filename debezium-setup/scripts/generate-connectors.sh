@@ -20,6 +20,21 @@ fi
 
 echo "Generating connector configurations from .env..."
 
+# Security (#43/#44):
+#  - TLS on by default; override with MSSQL_ENCRYPT=false only for local/dev.
+#  - CONNECT_SECRET_MODE=file emits ${file:...} provider references instead of plaintext, so the
+#    generated JSON contains no credentials (Connect's FileConfigProvider resolves them at runtime
+#    from a mounted secret). Default 'inline' keeps the env value for local runs.
+MSSQL_ENCRYPT="${MSSQL_ENCRYPT:-true}"
+SECRET_MODE="${CONNECT_SECRET_MODE:-inline}"
+if [ "$SECRET_MODE" = "file" ]; then
+  MSSQL_PW_VALUE='${file:/opt/connect-secrets/source.properties:password}'
+  PG_PW_VALUE='${file:/opt/connect-secrets/sink.properties:password}'
+else
+  MSSQL_PW_VALUE="${MSSQL_PASSWORD}"
+  PG_PW_VALUE="${POSTGRES_PASSWORD}"
+fi
+
 # Generate MS SQL Source Connector Configuration
 cat > "$CONNECTORS_DIR/mssql-source.json" <<EOF
 {
@@ -31,9 +46,9 @@ cat > "$CONNECTORS_DIR/mssql-source.json" <<EOF
     "database.hostname": "${MSSQL_HOST}",
     "database.port": "${MSSQL_PORT}",
     "database.user": "${MSSQL_USER}",
-    "database.password": "${MSSQL_PASSWORD}",
+    "database.password": "${MSSQL_PW_VALUE}",
     "database.names": "${MSSQL_DATABASE}",
-    "database.encrypt": "false",
+    "database.encrypt": "${MSSQL_ENCRYPT}",
     
     "topic.prefix": "${TOPIC_PREFIX}",
     "table.include.list": "${TABLE_INCLUDE_LIST}",
@@ -69,7 +84,7 @@ cat > "$CONNECTORS_DIR/postgres-sink.json" <<EOF
     
     "connection.url": "jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DATABASE}?currentSchema=${POSTGRES_SCHEMA}",
     "connection.username": "${POSTGRES_USER}",
-    "connection.password": "${POSTGRES_PASSWORD}",
+    "connection.password": "${PG_PW_VALUE}",
     
     "topics.regex": "${TOPIC_PREFIX}\\\\.${MSSQL_DATABASE}\\\\.${MSSQL_SCHEMA}\\\\.(.*)",
     
