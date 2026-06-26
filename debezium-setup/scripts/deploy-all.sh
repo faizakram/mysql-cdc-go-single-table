@@ -243,13 +243,42 @@ print_success "MS SQL prerequisites validation complete"
 
 print_section "Step 3: Preparing PostgreSQL Target and Replicating Schema"
 
-# Clean up PostgreSQL target database
-print_info "Cleaning up PostgreSQL target database..."
-docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "DROP SCHEMA IF EXISTS $POSTGRES_SCHEMA CASCADE; CREATE SCHEMA $POSTGRES_SCHEMA;" > /dev/null 2>&1
-print_success "PostgreSQL target database cleaned"
+# Prepare the PostgreSQL target schema.
+# SAFETY (#63): a destructive reset is NEVER the default. By default we ensure the schema
+# exists non-destructively (CREATE SCHEMA IF NOT EXISTS) and leave existing data alone;
+# replicate-schema.py then creates any missing tables idempotently.
+# To wipe and recreate the target schema, opt in explicitly with RESET_TARGET=true. When run
+# interactively this also requires typing the schema name to confirm; set RESET_CONFIRM=yes to
+# skip the prompt in automation (use with care — this destroys all data in the schema).
+if [ "${RESET_TARGET,,}" == "true" ]; then
+    print_warning "RESET_TARGET=true — this will DROP SCHEMA $POSTGRES_SCHEMA CASCADE and DESTROY all data in it."
+    if [ "${RESET_CONFIRM,,}" != "yes" ] && [ -t 0 ]; then
+        read -r -p "Type the schema name '$POSTGRES_SCHEMA' to confirm destructive reset: " _confirm
+        if [ "$_confirm" != "$POSTGRES_SCHEMA" ]; then
+            print_error "Confirmation did not match — aborting to protect target data."
+            exit 1
+        fi
+    elif [ "${RESET_CONFIRM,,}" != "yes" ]; then
+        print_error "RESET_TARGET=true requires RESET_CONFIRM=yes in non-interactive runs — aborting."
+        exit 1
+    fi
+    print_info "Resetting PostgreSQL target schema (destructive)..."
+    docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "DROP SCHEMA IF EXISTS $POSTGRES_SCHEMA CASCADE; CREATE SCHEMA $POSTGRES_SCHEMA;" > /dev/null 2>&1
+    print_success "PostgreSQL target schema reset"
+else
+    print_info "Ensuring PostgreSQL target schema exists (non-destructive)..."
+    docker exec -i postgres-target psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "CREATE SCHEMA IF NOT EXISTS $POSTGRES_SCHEMA;" > /dev/null 2>&1
+    print_success "PostgreSQL target schema ready (existing data preserved)"
+fi
 
 print_info "Running automatic schema replication from MS SQL..."
-python3 scripts/replicate-schema.py
+# Pass the destructive intent through: only drop+recreate tables when the operator opted into a
+# full reset above. Default replication is idempotent (CREATE TABLE IF NOT EXISTS) — see #63.
+if [ "${RESET_TARGET,,}" == "true" ]; then
+    python3 scripts/replicate-schema.py --drop-existing
+else
+    python3 scripts/replicate-schema.py
+fi
 
 print_success "Schema replication complete"
 

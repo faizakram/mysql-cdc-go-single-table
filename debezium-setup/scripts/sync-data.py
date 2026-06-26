@@ -278,11 +278,15 @@ def sync_table_data(mssql_conn, postgres_conn, schema, table, columns, progress_
         mssql_cursor = mssql_conn.cursor()
         mssql_cursor.execute(select_query)
         
-        # Truncate target table
-        print("  🗑️  Truncating target table...")
         pg_cursor = postgres_conn.cursor()
-        pg_cursor.execute(f"TRUNCATE TABLE {pg_full_table} CASCADE")
-        postgres_conn.commit()
+        # SAFETY (#63): honor the truncate flag (previously ignored — TRUNCATE always ran).
+        # With --no-truncate the load is additive (INSERT only); pass truncate to wipe first.
+        if truncate_partial:
+            print("  🗑️  Truncating target table (CASCADE)...")
+            pg_cursor.execute(f"TRUNCATE TABLE {pg_full_table} CASCADE")
+            postgres_conn.commit()
+        else:
+            print("  ➕ --no-truncate: appending to existing target data (no truncate)")
         
         # Batch insert into PostgreSQL
         print("  📝 Writing to PostgreSQL...")

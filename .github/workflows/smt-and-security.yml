@@ -1,0 +1,50 @@
+name: SMT & Security
+
+# Builds the custom Debezium SMT jar and runs a repo-wide security scan (#62).
+# Complements ci.yml (Go) and platform-ci.yml (control plane + UI).
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  smt:
+    name: Custom SMT — build & test jar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      # `package` compiles + runs any SMT unit tests (#58) and produces the shaded jar that the
+      # Kafka Connect data plane mounts as a plugin.
+      - name: Build SMT jar
+        working-directory: debezium-setup/custom-smt
+        run: mvn -B clean package
+      - name: Upload SMT jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: snake-case-transform
+          path: debezium-setup/custom-smt/target/*.jar
+          if-no-files-found: error
+
+  security:
+    name: Security scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Filesystem scan: dependency vulnerabilities (Maven/npm/Go) + leaked secrets.
+      # Fails the build only on fixable CRITICAL issues so the gate is actionable, not noisy.
+      - name: Trivy vulnerability & secret scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table

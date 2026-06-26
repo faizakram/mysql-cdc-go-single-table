@@ -254,7 +254,7 @@ def quote_identifier(name):
         return f'"{name}"'
     return name
 
-def create_postgres_table(pg_conn, table_name, schema, progress_tracker=None):
+def create_postgres_table(pg_conn, table_name, schema, progress_tracker=None, drop_existing=False):
     """Create PostgreSQL table from MS SQL schema"""
     cursor = pg_conn.cursor()
     
@@ -309,7 +309,11 @@ def create_postgres_table(pg_conn, table_name, schema, progress_tracker=None):
     print(f"   Primary Keys: {', '.join(pk_columns) if pk_columns else 'None'}")
     
     try:
-        cursor.execute(f"DROP TABLE IF EXISTS dbo.{pg_table_name} CASCADE")
+        # SAFETY (#63): only drop an existing target table when an explicit reset was requested.
+        # The default path is idempotent — CREATE TABLE IF NOT EXISTS leaves existing data intact.
+        if drop_existing:
+            print(f"   ⚠️  --drop-existing: dropping dbo.{pg_table_name} (CASCADE) before recreate")
+            cursor.execute(f"DROP TABLE IF EXISTS dbo.{pg_table_name} CASCADE")
         cursor.execute(create_sql)
         pg_conn.commit()
         print(f"   ✅ Created successfully")
@@ -373,7 +377,16 @@ Examples:
                        help='Start processing from specific table (skips previous tables)')
     parser.add_argument('--reset', action='store_true',
                        help='Reset progress and start fresh')
+    parser.add_argument('--drop-existing', action='store_true',
+                       help='DESTRUCTIVE: drop existing target tables (CASCADE) before recreating. '
+                            'Default is non-destructive (CREATE TABLE IF NOT EXISTS). Also enabled '
+                            'when RESET_TARGET=true in the environment.')
     args = parser.parse_args()
+
+    # Honor RESET_TARGET from the environment so deploy-all.sh / .env can drive a full reset (#63).
+    drop_existing = args.drop_existing or os.getenv('RESET_TARGET', '').lower() == 'true'
+    if drop_existing:
+        print("⚠️  Destructive mode: existing target tables will be DROPPED (CASCADE) before recreate.\n")
     
     # Initialize progress tracker
     progress_tracker = ProgressTracker("schema_replication_progress.json")
@@ -466,7 +479,7 @@ Examples:
         print(f"\n[{idx}/{len(tables)}] Processing: {table}")
         schema = get_mssql_schema(mssql_conn, table)
         if schema:
-            if create_postgres_table(pg_conn, table, schema, progress_tracker):
+            if create_postgres_table(pg_conn, table, schema, progress_tracker, drop_existing=drop_existing):
                 success_count += 1
         
         # Show progress periodically
