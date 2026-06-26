@@ -58,6 +58,10 @@ platform:
     # Raise a LAG alert when a project's sink consumer-group lag exceeds this many records (#28).
     # 0 disables lag alerting.
     lag-threshold: ${ALERTS_LAG_THRESHOLD:0}
+  metrics:
+    # How often (ms) to refresh per-project Prometheus gauges (lag, connector up/down) from live
+    # connector health (#50). Lower = fresher dashboards, more calls to Kafka Connect.
+    refresh-ms: ${METRICS_REFRESH_MS:15000}
   auth:
     # HMAC-SHA256 signing key (>= 32 bytes). MUST be overridden in any real environment (#55).
     jwt-secret: ${JWT_SECRET:dev-only-jwt-signing-secret-change-me-please-32b+}

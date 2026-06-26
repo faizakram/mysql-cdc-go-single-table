@@ -137,6 +137,14 @@
             <artifactId>kafka-clients</artifactId>
         </dependency>
 
+        <!-- Structured JSON logging (#50): emits one JSON object per log line for Loki/ELK
+             ingestion. Active only under the "json" Spring profile; plain console otherwise. -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>7.4</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
