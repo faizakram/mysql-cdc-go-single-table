@@ -1,0 +1,51 @@
+# Self-contained CDC data plane for a real end-to-end run:
+#   SQL Server (source, CDC) -> Debezium -> Kafka -> JDBC sink -> PostgreSQL (target)
+# Brought up locally to exercise the platform against a live pipeline.
+name: cdc-dataplane
+
+services:
+  zookeeper:
+    image: debezium/zookeeper:2.5
+    ports: ["2181:2181"]
+
+  kafka:
+    image: debezium/kafka:2.5
+    depends_on: [zookeeper]
+    environment:
+      ZOOKEEPER_CONNECT: zookeeper:2181
+    ports: ["9092:9092"]
+
+  connect:
+    image: debezium/connect:2.5
+    depends_on: [kafka]
+    ports: ["8083:8083"]
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: "1"
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      STATUS_STORAGE_REPLICATION_FACTOR: "1"
+    volumes:
+      # Mount the custom SMT jar as a Connect plugin.
+      - ./custom-smt/target:/kafka/connect/custom-smt
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64        # emulated on Apple Silicon; real SQL Server is needed for CDC (Agent)
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
+      MSSQL_PID: "Developer"
+      MSSQL_AGENT_ENABLED: "true"  # CDC capture jobs require SQL Server Agent
+    ports: ["1433:1433"]
+
+  postgres-target:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: target_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5544:5432"]
