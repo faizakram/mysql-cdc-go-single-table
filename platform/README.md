@@ -36,11 +36,20 @@ platform/
 ## Run locally
 
 ### Backend
-Requires a Postgres metadata DB. Quickest path is the compose file below; or point it at any Postgres:
+By default the backend runs an **embedded in-process Postgres** for its metadata store, so it needs
+**no external database and no Docker** to start (data persists in `~/.migration-platform/pgdata`):
 
 ```bash
 cd backend
-METADATA_DB_URL=jdbc:postgresql://localhost:5433/migration_platform \
+mvn spring-boot:run            # or: java -jar target/migration-platform-backend-*.jar
+```
+
+To use an **external/managed Postgres** instead (recommended for production / multiple instances):
+
+```bash
+PLATFORM_METADATA_EMBEDDED=false \
+METADATA_DB_URL=jdbc:postgresql://host:5432/migration_platform \
+METADATA_DB_USER=... METADATA_DB_PASSWORD=... \
 KAFKA_CONNECT_URL=http://localhost:8083 \
 mvn spring-boot:run
 ```

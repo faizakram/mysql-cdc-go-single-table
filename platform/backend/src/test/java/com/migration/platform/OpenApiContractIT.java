@@ -15,7 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Validates the generated OpenAPI contract on a running app (#24). Confirms the spec is served
  * without auth and advertises the core endpoints. Runs in CI (Docker); skipped otherwise.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "platform.metadata.embedded=false") // use the Testcontainers Postgres
 @Testcontainers(disabledWithoutDocker = true)
 class OpenApiContractIT {
 

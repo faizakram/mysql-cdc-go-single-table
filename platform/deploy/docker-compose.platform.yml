@@ -28,6 +28,8 @@ services:
         condition: service_healthy
     environment:
       SERVER_PORT: 8090
+      # In containers we use the dedicated metadata-db service, not the embedded DB.
+      PLATFORM_METADATA_EMBEDDED: "false"
       METADATA_DB_URL: jdbc:postgresql://metadata-db:5432/migration_platform
       METADATA_DB_USER: postgres
       METADATA_DB_PASSWORD: postgres

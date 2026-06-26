@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Named *IT so it is NOT run by surefire (`mvn test`); it requires Docker. This is the seed for the
  * full Dockerised pipeline test (MSSQL → Kafka → PG) tracked under #58 — to be run via failsafe/CI.
  */
-@SpringBootTest
+@SpringBootTest(properties = "platform.metadata.embedded=false") // use the Testcontainers Postgres
 @Testcontainers(disabledWithoutDocker = true) // runs in CI/with Docker; skipped otherwise
 class MetadataIntegrationIT {
 

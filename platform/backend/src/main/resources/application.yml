@@ -28,6 +28,12 @@ spring:
 
 # Kafka Connect REST endpoint the control plane proxies (data plane management)
 platform:
+  metadata:
+    # true (default): run an embedded in-process Postgres for the app's own state — no external
+    # DB / Docker needed to start. false: use an external managed Postgres via spring.datasource.*
+    # (recommended for production / multiple app instances).
+    embedded: ${PLATFORM_METADATA_EMBEDDED:true}
+    embedded-data-dir: ${PLATFORM_METADATA_DATA_DIR:${user.home}/.migration-platform/pgdata}
   connect:
     base-url: ${KAFKA_CONNECT_URL:http://localhost:8083}
     # Bootstrap servers as seen FROM Kafka Connect (used in generated source schema-history config).
