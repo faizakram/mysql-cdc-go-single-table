@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging config (#50). Two modes:
+    * default        : human-readable console (Spring Boot's default pattern) for local dev.
+    * "json" profile : one structured JSON object per line (logstash encoder) for centralized
+                       log aggregation (Loki/promtail or ELK). Enable with SPRING_PROFILES_ACTIVE=json.
+  The JSON output includes timestamp, level, logger, thread, message, MDC fields and stack traces,
+  so logs are queryable by field (e.g. level, logger) once shipped to Loki/Elasticsearch.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- Local/dev: readable console. -->
+    <springProfile name="!json">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <!-- Production: structured JSON to stdout (the container's log stream). -->
+    <springProfile name="json">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>projectId</includeMdcKeyName>
+                <includeMdcKeyName>jobId</includeMdcKeyName>
+                <customFields>{"service":"migration-platform"}</customFields>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+
+    <logger name="com.migration.platform" level="INFO"/>
+</configuration>

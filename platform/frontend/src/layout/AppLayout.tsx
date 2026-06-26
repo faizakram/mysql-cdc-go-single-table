@@ -1,7 +1,7 @@
 import { Layout, Menu, Typography, Space, Dropdown, Avatar, Tag, Badge } from 'antd';
 import {
   DashboardOutlined, DatabaseOutlined, ProjectOutlined, UserOutlined, LogoutOutlined, TeamOutlined,
-  BellOutlined,
+  BellOutlined, AreaChartOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -16,6 +16,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const { user, logout } = useAuth();
   const firing = useQuery({ queryKey: ['alerts-count'], queryFn: alertsApi.count, refetchInterval: 15000 });
+  // Grafana dashboards (#51) run alongside the platform; link out to them.
+  const grafanaUrl = (import.meta.env.VITE_GRAFANA_URL as string) || 'http://localhost:3001';
 
   const items = [
     { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
@@ -26,6 +28,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       label: <Space>Alerts<Badge count={firing.data?.firing ?? 0} size="small" /></Space>,
     },
     ...(user?.role === 'ADMIN' ? [{ key: '/users', icon: <TeamOutlined />, label: 'Users' }] : []),
+    { key: 'grafana', icon: <AreaChartOutlined />, label: 'Grafana ↗' },
   ];
   const selected = items.find((i) => i.key !== '/' && location.pathname.startsWith(i.key))?.key
     ?? '/';
@@ -43,7 +46,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           mode="inline"
           selectedKeys={[selected]}
           items={items}
-          onClick={({ key }) => navigate(key)}
+          onClick={({ key }) => (key === 'grafana' ? window.open(grafanaUrl, '_blank', 'noopener') : navigate(key))}
         />
       </Sider>
       <Layout>

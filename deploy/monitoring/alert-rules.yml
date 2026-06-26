@@ -1,0 +1,29 @@
+# Prometheus alerting rules (#52, infra-level mirror of the in-app AlertMonitor).
+# The platform also raises alerts in its own UI; these give Prometheus/Alertmanager a parallel
+# path for ops tooling.
+groups:
+  - name: migration-platform
+    rules:
+      - alert: ConnectorDown
+        expr: migration_connector_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Connector {{ $labels.connector }} ({{ $labels.role }}) is down"
+          description: "Project {{ $labels.project }} connector has been not-RUNNING for 2m."
+
+      - alert: SinkLagHigh
+        expr: migration_sink_lag_records > 100000
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "High sink lag for {{ $labels.project }}"
+          description: "Sink lag {{ $value }} records (>100k) for 5m."
+
+      - alert: PlatformAlertsFiring
+        expr: migration_alerts_firing > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} platform alert(s) firing"
+          description: "The control plane reports open alerts; check the Alerts screen."

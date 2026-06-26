@@ -1,0 +1,23 @@
+# Prometheus scrape config for the migration platform (#50/#51).
+# Scrapes the control-plane's Micrometer endpoint and (optionally) Kafka Connect JMX.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alert-rules.yml
+
+scrape_configs:
+  # Control plane: JVM, HTTP, Hikari + custom migration_* metrics.
+  - job_name: migration-platform
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['platform-backend:8090']
+        labels: { component: control-plane }
+
+  # Kafka Connect / Debezium JMX, exposed via the JMX exporter (see README to enable).
+  # Left here as a ready target; harmless if the exporter isn't running.
+  - job_name: kafka-connect-jmx
+    static_configs:
+      - targets: ['connect:9404']
+        labels: { component: data-plane }
