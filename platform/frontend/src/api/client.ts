@@ -2,6 +2,7 @@ import axios from 'axios';
 import type {
   Connection, ConnectionRequest, TestResult,
   Project, ProjectRequest, Job, TableInfo, ColumnInfo, ColumnMapping, ProjectHealth,
+  ReconciliationRun,
 } from './types';
 
 const http = axios.create({ baseURL: '/api/v1' });
@@ -16,6 +17,13 @@ export const connectionsApi = {
   test: (id: string) => http.post<TestResult>(`/connections/${id}/test`).then((r) => r.data),
   testAdhoc: (body: ConnectionRequest) =>
     http.post<TestResult>('/connections/test', body).then((r) => r.data),
+};
+
+export const reconciliationApi = {
+  run: (projectId: string) =>
+    http.post<ReconciliationRun>(`/projects/${projectId}/reconciliation`).then((r) => r.data),
+  history: (projectId: string) =>
+    http.get<ReconciliationRun[]>(`/projects/${projectId}/reconciliation`).then((r) => r.data),
 };
 
 export const monitoringApi = {

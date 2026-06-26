@@ -104,6 +104,27 @@ export interface ProjectHealth {
   connectors: ConnectorHealth[];
 }
 
+export interface ReconciliationResult {
+  schemaName: string;
+  tableName: string;
+  sourceCount: number | null;
+  targetCount: number | null;
+  difference: number | null;
+  status: 'MATCH' | 'MISMATCH' | 'ERROR';
+  error: string | null;
+}
+
+export interface ReconciliationRun {
+  id: string;
+  projectId: string;
+  status: string;
+  totalTables: number;
+  mismatched: number;
+  startedAt: string;
+  finishedAt: string | null;
+  results: ReconciliationResult[];
+}
+
 export interface Job {
   id: string;
   projectId: string;

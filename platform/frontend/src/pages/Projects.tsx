@@ -4,6 +4,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ThunderboltOutlined, TableOutlined, SwapOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { projectsApi, connectionsApi } from '../api/client';
@@ -11,6 +12,7 @@ import type { Project, ProjectRequest, ProjectStatus } from '../api/types';
 import JobsDrawer from '../components/JobsDrawer';
 import SchemaDrawer from '../components/SchemaDrawer';
 import MappingDrawer from '../components/MappingDrawer';
+import ValidationDrawer from '../components/ValidationDrawer';
 
 const STATUS_COLOR: Record<ProjectStatus, string> = {
   DRAFT: 'default', READY: 'blue', ACTIVE: 'green', ARCHIVED: 'gold',
@@ -37,6 +39,7 @@ export default function Projects() {
   const [runsFor, setRunsFor] = useState<Project | null>(null);
   const [tablesFor, setTablesFor] = useState<Project | null>(null);
   const [mappingFor, setMappingFor] = useState<Project | null>(null);
+  const [validateFor, setValidateFor] = useState<Project | null>(null);
   const [form] = Form.useForm<FormValues>();
 
   const { data, isLoading } = useQuery({ queryKey: ['projects'], queryFn: projectsApi.list });
@@ -102,6 +105,9 @@ export default function Projects() {
           <Button size="small" icon={<SwapOutlined />}
             disabled={!row.sourceConnectionId}
             onClick={() => setMappingFor(row)}>Mapping</Button>
+          <Button size="small" icon={<CheckCircleOutlined />}
+            disabled={!row.sourceConnectionId || !row.targetConnectionId}
+            onClick={() => setValidateFor(row)}>Validate</Button>
           <Button size="small" type="primary" ghost icon={<ThunderboltOutlined />}
             onClick={() => setRunsFor(row)}>Runs</Button>
           <Button size="small" danger icon={<DeleteOutlined />}
@@ -208,6 +214,7 @@ export default function Projects() {
       <JobsDrawer project={runsFor} onClose={() => setRunsFor(null)} />
       <SchemaDrawer project={tablesFor} onClose={() => setTablesFor(null)} />
       <MappingDrawer project={mappingFor} onClose={() => setMappingFor(null)} />
+      <ValidationDrawer project={validateFor} onClose={() => setValidateFor(null)} />
     </Card>
   );
 }
