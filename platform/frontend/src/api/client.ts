@@ -3,7 +3,7 @@ import { tokenStore } from '../auth/token';
 import type {
   Connection, ConnectionRequest, TestResult,
   Project, ProjectRequest, Job, JobTableStatus, TableInfo, ColumnInfo, ColumnMapping, ProjectHealth,
-  ReconciliationRun, LoginResponse, MeResponse, UserAdmin, RoleName, AlertItem,
+  ReconciliationRun, LoginResponse, MeResponse, UserAdmin, RoleName, AlertItem, ConstraintApplyResult,
 } from './types';
 
 const http = axios.create({ baseURL: '/api/v1' });
@@ -91,6 +91,10 @@ export const schemaApi = {
     http.get<ColumnMapping[]>(`/connections/${connectionId}/schema/type-mapping`, {
       params: projectId ? { schema, table, projectId } : { schema, table },
     }).then((r) => r.data),
+  constraintsDdl: (projectId: string) =>
+    http.get<string[]>(`/projects/${projectId}/schema/constraints/ddl`).then((r) => r.data),
+  applyConstraints: (projectId: string) =>
+    http.post<ConstraintApplyResult>(`/projects/${projectId}/schema/constraints/apply`).then((r) => r.data),
 };
 
 export const projectsApi = {

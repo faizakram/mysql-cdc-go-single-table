@@ -100,6 +100,13 @@ export interface ColumnInfo {
   primaryKey: boolean;
 }
 
+export interface ConstraintApplyResult {
+  indexes: number;
+  foreignKeys: number;
+  statements: string[];
+  errors: string[];
+}
+
 export interface ColumnMapping {
   column: string;
   sourceType: string;

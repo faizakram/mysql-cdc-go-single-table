@@ -3,6 +3,8 @@ package com.migration.platform.connection;
 import com.migration.platform.common.CryptoService;
 import com.migration.platform.common.NotFoundException;
 import com.migration.platform.connection.dto.ColumnInfo;
+import com.migration.platform.connection.dto.ConstraintDtos.ForeignKeyInfo;
+import com.migration.platform.connection.dto.ConstraintDtos.IndexInfo;
 import com.migration.platform.connection.dto.TableInfo;
 import org.springframework.stereotype.Service;
 
@@ -73,6 +75,65 @@ public class SchemaDiscoveryService {
             return out;
         } catch (SQLException e) {
             throw new IllegalArgumentException("Column discovery failed: " + e.getMessage());
+        }
+    }
+
+    /** Secondary indexes on a table (excludes the primary-key index). */
+    public List<IndexInfo> listIndexes(UUID connectionId, String schema, String table) {
+        DbConnection c = find(connectionId);
+        try (Connection conn = open(c)) {
+            DatabaseMetaData md = conn.getMetaData();
+            String catalog = conn.getCatalog();
+            Set<String> pk = primaryKeyColumns(md, catalog, schema, table);
+
+            Map<String, boolean[]> uniqueByIdx = new LinkedHashMap<>();
+            Map<String, List<String>> colsByIdx = new LinkedHashMap<>();
+            try (ResultSet rs = md.getIndexInfo(catalog, schema, table, false, false)) {
+                while (rs.next()) {
+                    if (rs.getShort("TYPE") == DatabaseMetaData.tableIndexStatistic) continue;
+                    String name = rs.getString("INDEX_NAME");
+                    String col = rs.getString("COLUMN_NAME");
+                    if (name == null || col == null) continue;
+                    boolean unique = !rs.getBoolean("NON_UNIQUE");
+                    uniqueByIdx.computeIfAbsent(name, k -> new boolean[]{unique});
+                    colsByIdx.computeIfAbsent(name, k -> new ArrayList<>()).add(col);
+                }
+            }
+            List<IndexInfo> out = new ArrayList<>();
+            for (var e : colsByIdx.entrySet()) {
+                if (!pk.isEmpty() && new HashSet<>(e.getValue()).equals(pk)) continue; // PK index already exists
+                out.add(new IndexInfo(e.getKey(), uniqueByIdx.get(e.getKey())[0], e.getValue()));
+            }
+            return out;
+        } catch (SQLException ex) {
+            throw new IllegalArgumentException("Index discovery failed: " + ex.getMessage());
+        }
+    }
+
+    /** Foreign keys declared on a table. */
+    public List<ForeignKeyInfo> listForeignKeys(UUID connectionId, String schema, String table) {
+        DbConnection c = find(connectionId);
+        try (Connection conn = open(c)) {
+            DatabaseMetaData md = conn.getMetaData();
+            Map<String, String> refTable = new LinkedHashMap<>();
+            Map<String, List<String>> fkCols = new LinkedHashMap<>();
+            Map<String, List<String>> refCols = new LinkedHashMap<>();
+            try (ResultSet rs = md.getImportedKeys(conn.getCatalog(), schema, table)) {
+                while (rs.next()) {
+                    String name = rs.getString("FK_NAME");
+                    if (name == null) name = "fk_" + table + "_" + rs.getString("FKCOLUMN_NAME");
+                    refTable.putIfAbsent(name, rs.getString("PKTABLE_NAME"));
+                    fkCols.computeIfAbsent(name, k -> new ArrayList<>()).add(rs.getString("FKCOLUMN_NAME"));
+                    refCols.computeIfAbsent(name, k -> new ArrayList<>()).add(rs.getString("PKCOLUMN_NAME"));
+                }
+            }
+            List<ForeignKeyInfo> out = new ArrayList<>();
+            for (String name : refTable.keySet()) {
+                out.add(new ForeignKeyInfo(name, fkCols.get(name), refTable.get(name), refCols.get(name)));
+            }
+            return out;
+        } catch (SQLException ex) {
+            throw new IllegalArgumentException("Foreign-key discovery failed: " + ex.getMessage());
         }
     }
 

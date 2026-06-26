@@ -1,11 +1,11 @@
 import {
-  Drawer, Table, Tag, Alert, Button, Space, App, Typography, Spin,
+  Drawer, Table, Tag, Alert, Button, Space, App, Typography, Spin, Modal,
 } from 'antd';
-import { KeyOutlined, SaveOutlined } from '@ant-design/icons';
+import { KeyOutlined, SaveOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { schemaApi, projectsApi } from '../api/client';
-import type { ColumnInfo, Project, TableInfo } from '../api/types';
+import type { ColumnInfo, Project, TableInfo, ConstraintApplyResult } from '../api/types';
 
 const keyOf = (t: TableInfo) => `${t.schemaName}.${t.tableName}`;
 
@@ -42,6 +42,23 @@ export default function SchemaDrawer({ project, onClose }: { project: Project | 
   const open = project !== null;
   const connId = project?.sourceConnectionId;
   const [selected, setSelected] = useState<string[]>([]);
+  const [constraintsOpen, setConstraintsOpen] = useState(false);
+  const [applyResult, setApplyResult] = useState<ConstraintApplyResult | null>(null);
+
+  const ddl = useQuery({
+    queryKey: ['constraint-ddl', project?.id],
+    queryFn: () => schemaApi.constraintsDdl(project!.id),
+    enabled: constraintsOpen && !!project,
+  });
+  const applyConstraints = useMutation({
+    mutationFn: () => schemaApi.applyConstraints(project!.id),
+    onSuccess: (r) => {
+      setApplyResult(r);
+      message[r.errors.length === 0 ? 'success' : 'warning'](
+        `Applied ${r.indexes} index(es), ${r.foreignKeys} FK(s)` + (r.errors.length ? `, ${r.errors.length} error(s)` : ''));
+    },
+    onError: (e: any) => message.error(e?.response?.data?.message ?? 'Apply failed'),
+  });
 
   useEffect(() => {
     const saved = (project?.config?.selectedTables as string[] | undefined) ?? [];
@@ -98,10 +115,16 @@ export default function SchemaDrawer({ project, onClose }: { project: Project | 
       open={open}
       onClose={onClose}
       extra={
-        <Button type="primary" icon={<SaveOutlined />}
-          disabled={!connId} loading={save.isPending} onClick={() => save.mutate()}>
-          Save selection ({selected.length})
-        </Button>
+        <Space>
+          <Button icon={<ApartmentOutlined />} disabled={!connId}
+            onClick={() => { setApplyResult(null); setConstraintsOpen(true); }}>
+            Indexes &amp; FKs
+          </Button>
+          <Button type="primary" icon={<SaveOutlined />}
+            disabled={!connId} loading={save.isPending} onClick={() => save.mutate()}>
+            Save selection ({selected.length})
+          </Button>
+        </Space>
       }
     >
       {!connId && (
@@ -136,6 +159,40 @@ export default function SchemaDrawer({ project, onClose }: { project: Project | 
             : null,
         }}
       />
+
+      <Modal
+        title="Replicate indexes & foreign keys"
+        open={constraintsOpen}
+        width={760}
+        onCancel={() => setConstraintsOpen(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setConstraintsOpen(false)}>Close</Button>,
+          <Button key="apply" type="primary" loading={applyConstraints.isPending}
+            onClick={() => applyConstraints.mutate()}>Apply to target</Button>,
+        ]}
+      >
+        <Typography.Paragraph type="secondary">
+          DDL generated from the source for the selected tables (indexes then foreign keys), with
+          snake_cased names. Run after the initial load; idempotent. Defaults/check constraints are
+          out of scope.
+        </Typography.Paragraph>
+        {ddl.isLoading ? <Spin /> : (
+          <pre style={{ maxHeight: 280, overflow: 'auto', background: '#f5f5f5', padding: 12, fontSize: 12 }}>
+            {(ddl.data ?? []).join('\n') || '— no indexes or foreign keys found —'}
+          </pre>
+        )}
+        {applyResult && (
+          <Alert
+            style={{ marginTop: 12 }}
+            type={applyResult.errors.length === 0 ? 'success' : 'warning'}
+            showIcon
+            message={`Applied ${applyResult.indexes} index(es), ${applyResult.foreignKeys} foreign key(s)`}
+            description={applyResult.errors.length
+              ? <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{applyResult.errors.join('\n')}</pre>
+              : undefined}
+          />
+        )}
+      </Modal>
     </Drawer>
   );
 }
