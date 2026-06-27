@@ -18,8 +18,10 @@ The **source of truth** for the project **[Wiki](../../../../wiki)**. Edit the d
 
 **Operations**
 - [Security](Security.md) — auth/RBAC, secret encryption, threat model & hardening
-- [Monitoring & Operations](Monitoring-and-Operations.md) — metrics, dashboards, logs, scaling, DR
+- [Monitoring & Operations](Monitoring-and-Operations.md) — metrics, dashboards, logs, alerting
 - [Deployment](Deployment.md) — compose, Kubernetes, CI/CD, topologies
+- [Scaling & Capacity Planning](Scaling-and-Capacity-Planning.md) — levers, sizing guidance, limits
+- [Disaster Recovery](Disaster-Recovery.md) — backup scope, restore runbooks, RTO/RPO
 - [Troubleshooting](Troubleshooting.md) — common failures and fixes
 
 **Project**

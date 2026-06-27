@@ -52,7 +52,7 @@ One command brings up the whole stack (control plane + data plane + monitoring).
 - **New here?** → [Getting Started](Getting-Started.md)
 - **Want to run a real migration?** → [Running a Migration](Running-a-Migration.md)
 - **Developing the platform?** → [Local Development](Local-Development.md)
-- **Operating it?** → [Monitoring & Operations](Monitoring-and-Operations.md) · [Deployment](Deployment.md) · [Security](Security.md)
+- **Operating it?** → [Monitoring & Operations](Monitoring-and-Operations.md) · [Deployment](Deployment.md) · [Security](Security.md) · [Scaling](Scaling-and-Capacity-Planning.md) · [Disaster Recovery](Disaster-Recovery.md)
 - **Hit a problem?** → [Troubleshooting](Troubleshooting.md)
 
 ---

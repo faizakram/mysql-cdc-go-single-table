@@ -84,4 +84,55 @@ Sink uses **upsert** (primary-key mode), `delete.enabled` for HARD deletes, and 
 - **Secrets at rest** — connection passwords are AES-256-GCM encrypted and never returned ([Security](Security.md)).
 - **Observability built in** — per-table progress, consumer-group lag, Prometheus metrics, audit log.
 
-See also: [Database Schema](Database-Schema.md) · [API Reference](API-Reference.md) · [Configuration](Configuration.md).
+---
+
+## Current vs. target architecture
+
+The diagram above is the **current** architecture as it ships in `deploy/docker-compose.full.yml`: a single backend, an embedded-free metadata Postgres container, single-broker Kafka, and a single-worker Kafka Connect. That topology is for local runs, demos, and correctness — **not** production throughput or availability.
+
+### Target / production architecture (HA)
+
+For production, the same components run with no single point of failure:
+
+```
+            ┌──────────── Ingress / LB (TLS) ────────────┐
+            ▼                                             ▼
+   Frontend (nginx, N replicas)            Backend (Deployment, 2+ replicas, HPA 2→6)
+                                                  │  (stateless — all state in the DB)
+                                                  ▼
+                              External HA Postgres (primary + replica, PITR)   ← metadata
+                                                  │
+                                                  ▼  Connect REST
+                              Kafka Connect cluster (Strimzi, 2+ workers)
+                                                  │   configs + offsets in Kafka topics (RF=3)
+                                                  ▼
+                              Kafka (Strimzi, 3 brokers, RF=3, min.insync=2)
+                                       ▲                         │
+                         Debezium source                   JDBC sink
+                                       │                         ▼
+                              Source DB (HA)            Target DB (HA)
+```
+
+| Layer | Production strategy | Survives |
+|---|---|---|
+| Backend | Stateless `Deployment`, 2+ replicas, HPA, PodDisruptionBudget, topology spread | pod/node loss, rolling upgrades |
+| Metadata Postgres | External HA (CloudNativePG / Patroni / RDS Multi-AZ), sync replication, PITR | primary failover (RPO ≈ 0) |
+| Kafka | Strimzi 3-broker quorum, RF=3, `min.insync.replicas=2` | one broker loss, no data loss |
+| Kafka Connect | Strimzi distributed cluster, 2+ workers; configs/offsets in replicated topics | worker loss → connectors rebalance, resume from committed offset |
+| Source / target DBs | Customer-managed HA | DB failover; CDC resumes from last offset |
+
+**Why the control plane scales safely:** all state is in the metadata Postgres, so any backend replica serves any request. The only multi-instance concern is the two background jobs (reconciliation, alert monitor) — run them under leader election so they fire once per cluster, not once per pod.
+
+**Why a Connect *cluster* is the real availability win:** the single-worker dev data plane keeps offsets on a worker's disk; a Strimzi `KafkaConnect` cluster keeps connector configs and **source offsets** in replicated Kafka topics. If a worker dies, the cluster rebalances the connector to a survivor and it resumes from the last committed offset — no re-snapshot, no data loss.
+
+### Migration path (dev → production)
+
+1. **Externalize the metadata store** — set `PLATFORM_METADATA_EMBEDDED=false` and point at managed HA Postgres with PITR.
+2. **Move secrets out of config** — set strong `PLATFORM_CRYPTO_KEY` / `JWT_SECRET`, and `CONNECT_SECRET_MODE=file`/`env` so DB passwords resolve from mounted secrets, not the Connect config topic.
+3. **Replace the single-worker data plane** — deploy Kafka + Connect via the Strimzi operator (`deploy/k8s/30-kafka-connect-strimzi.yaml`); set topic RF=3.
+4. **Scale the control plane** — run the backend `Deployment` with 2+ replicas behind an ingress doing TLS; gate background jobs with leader election.
+5. **Add HA for source/target** and validate throughput (see [Scaling & Capacity Planning](Scaling-and-Capacity-Planning.md)) and recovery (see [Disaster Recovery](Disaster-Recovery.md)).
+
+Apply order and manifests are in [Deployment](Deployment.md) and the `docs/HA-TOPOLOGY.md` deep-dive.
+
+See also: [Deployment](Deployment.md) · [Scaling & Capacity Planning](Scaling-and-Capacity-Planning.md) · [Disaster Recovery](Disaster-Recovery.md) · [Database Schema](Database-Schema.md) · [API Reference](API-Reference.md) · [Configuration](Configuration.md).

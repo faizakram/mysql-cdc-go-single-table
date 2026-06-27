@@ -16,6 +16,8 @@
 - [Security](Security)
 - [Monitoring & Operations](Monitoring-and-Operations)
 - [Deployment](Deployment)
+- [Scaling & Capacity Planning](Scaling-and-Capacity-Planning)
+- [Disaster Recovery](Disaster-Recovery)
 - [Troubleshooting](Troubleshooting)
 
 **Project**
