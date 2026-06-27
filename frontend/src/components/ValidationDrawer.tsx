@@ -115,7 +115,7 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
   return (
     <Drawer
       title={project ? `Validate — ${project.name}` : ''}
-      width={780}
+      width={typeof window !== 'undefined' ? Math.min(1180, window.innerWidth - 64) : 1180}
       open={open}
       onClose={onClose}
       extra={
@@ -264,6 +264,7 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
                       size="small"
                       loading={integrity.isFetching}
                       dataSource={integrity.data?.results}
+                      scroll={{ x: 'max-content' }}
                       pagination={{ pageSize: 12, hideOnSinglePage: true }}
                       expandable={{
                         rowExpandable: (r) => r.issues?.length > 0,
