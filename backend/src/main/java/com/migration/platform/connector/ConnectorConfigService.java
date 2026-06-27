@@ -118,6 +118,12 @@ public class ConnectorConfigService {
         cfg.put("table.name.format", schemaQualified ? mc.targetSchema() + ".${topic}" : "${topic}");
         cfg.put("insert.mode", "upsert");
         cfg.put("delete.enabled", String.valueOf(hard));
+        if (hard) {
+            // Collapse multiple events for the same primary key within a sink batch to their final
+            // state, so an insert+delete of the same row under load resolves to the delete instead of
+            // leaving a phantom row on the target (#161). Relies on the Debezium 3.0 JDBC sink.
+            cfg.put("use.reduction.buffer", "true");
+        }
         cfg.put("primary.key.mode", "record_key");
         cfg.put("schema.evolution", mc.schemaEvolution());
         // Quote identifiers unless the names are already lowercase snake_case — so PRESERVE / camel /

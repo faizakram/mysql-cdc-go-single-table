@@ -27,7 +27,7 @@ services:
 
   connect:
     # Debezium Connect with the naming SMT baked in (#132); built from debezium-setup/Dockerfile.connect.
-    image: ${CONNECT_IMAGE:-ghcr.io/faizakram/connect-snakecase:2.5}
+    image: ${CONNECT_IMAGE:-ghcr.io/faizakram/connect-snakecase:3.0}
     build:
       context: ../debezium-setup
       dockerfile: Dockerfile.connect
