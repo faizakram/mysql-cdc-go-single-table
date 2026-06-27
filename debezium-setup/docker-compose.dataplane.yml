@@ -16,7 +16,12 @@ services:
     ports: ["9092:9092"]
 
   connect:
-    image: debezium/connect:2.5
+    # Custom Connect image with the naming SMT baked in (#132). CI publishes this tag; locally,
+    # `docker compose build connect` builds it from Dockerfile.connect — no manual jar mount needed.
+    image: ${CONNECT_IMAGE:-ghcr.io/faizakram/connect-snakecase:2.5}
+    build:
+      context: .
+      dockerfile: Dockerfile.connect
     depends_on: [kafka]
     ports: ["8083:8083"]
     environment:
@@ -28,9 +33,6 @@ services:
       CONFIG_STORAGE_REPLICATION_FACTOR: "1"
       OFFSET_STORAGE_REPLICATION_FACTOR: "1"
       STATUS_STORAGE_REPLICATION_FACTOR: "1"
-    volumes:
-      # Mount the custom SMT jar as a Connect plugin.
-      - ./custom-smt/target:/kafka/connect/custom-smt
 
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
