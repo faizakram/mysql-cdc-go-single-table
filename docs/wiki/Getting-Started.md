@@ -24,10 +24,14 @@ cd mysql-cdc-go-single-table
 ## 3. Start everything (one command)
 
 ```bash
-docker compose -f deploy/docker-compose.full.yml up -d --build
+./deploy/up.sh
 ```
 
-This builds and starts **ten** services on a single Docker network:
+This builds and starts the stack, waits until it's healthy, and prints a console banner listing every
+URL, credential and endpoint. (Plain `docker compose -f deploy/docker-compose.full.yml up -d --build`
+works too — the wrapper just adds the readiness wait and the pretty summary.)
+
+It starts **ten** services on a single Docker network:
 
 | Service | Role | Host URL / port |
 |---|---|---|

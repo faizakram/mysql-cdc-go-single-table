@@ -15,11 +15,12 @@ end-to-end validation.
 ## Quick start (one command)
 
 ```bash
-docker compose -f deploy/docker-compose.full.yml up -d --build
+./deploy/up.sh
 ```
 
-Brings up the whole stack — metadata DB, backend, frontend, Zookeeper, Kafka, Connect, and the
-monitoring stack — on one network.
+Builds and starts the whole stack — metadata DB, backend, frontend, Zookeeper, Kafka, Connect, and
+the monitoring stack — on one network, then prints every URL, credential and endpoint once it's
+healthy. (Plain `docker compose -f deploy/docker-compose.full.yml up -d --build` also works.)
 
 | What | URL | Credentials |
 |------|-----|-------------|
