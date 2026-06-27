@@ -310,6 +310,22 @@ export interface TableValidation {
 }
 export interface ValidationReport { tables: number; passed: number; failed: number; results: TableValidation[]; }
 
+// Async, job-based validation run (#150). Counters update as the run streams in.
+export type ValidationRunStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+export interface ValidationRun {
+  id: string;
+  projectId: string;
+  status: ValidationRunStatus;
+  totalTables: number;
+  completedTables: number;
+  passed: number;
+  failed: number;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  results: TableValidation[];
+}
+
 export interface Recommendation {
   table: string; column: string; sourceType: string; recommended: string; rationale: string; confidence: string;
 }

@@ -1,12 +1,14 @@
 import {
   Drawer, Button, Table, Tag, Tooltip, App, Statistic, Row, Col, Empty, Typography,
-  Segmented, InputNumber, Space, Switch, Divider, Tabs, Alert,
+  Segmented, InputNumber, Space, Switch, Divider, Tabs, Alert, Progress,
 } from 'antd';
 import { CheckCircleOutlined, SyncOutlined, DownloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { reconciliationApi, projectsApi } from '../api/client';
-import type { Project, ReconciliationResult, ReconciliationRun, TableValidation } from '../api/types';
+import type { Project, ReconciliationResult, ReconciliationRun, TableValidation, ValidationRun } from '../api/types';
+
+const RUNNING = (s?: string) => s === 'PENDING' || s === 'RUNNING';
 
 const RESULT_COLOR: Record<string, string> = {
   MATCH: 'green', MISMATCH: 'red', ERROR: 'orange', SKIPPED: 'default',
@@ -25,8 +27,11 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
   const [sampleSize, setSampleSize] = useState(1000);
   const [auto, setAuto] = useState(false);
   const [view, setView] = useState('recon');
+  const [runId, setRunId] = useState<string | null>(null);
 
   useEffect(() => { setAuto(project?.config?.autoReconcile === true); }, [project]);
+  // Forget the selected run when switching projects so we adopt the new project's latest run.
+  useEffect(() => { setRunId(null); }, [project?.id]);
 
   const history = useQuery({
     queryKey: ['reconciliation', project?.id],
@@ -34,22 +39,51 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
     enabled: open,
   });
 
-  const integrity = useQuery({
-    queryKey: ['validation', project?.id],
-    queryFn: () => projectsApi.validation(project!.id),
-    enabled: open && view === 'integrity',
+  // Integrity report (#150/#153): the latest run is adopted on tab open, then the chosen run is
+  // polled while it's PENDING/RUNNING so per-table rows and progress stream in live.
+  const integrityLatest = useQuery({
+    queryKey: ['validation-latest', project?.id],
+    queryFn: () => projectsApi.validationLatest(project!.id),
+    enabled: open && view === 'integrity' && runId === null,
+  });
+  useEffect(() => {
+    if (runId === null && integrityLatest.data?.id) setRunId(integrityLatest.data.id);
+  }, [integrityLatest.data, runId]);
+
+  const integrityRun = useQuery({
+    queryKey: ['validation-run', project?.id, runId],
+    queryFn: () => projectsApi.validationRun(project!.id, runId!),
+    enabled: open && view === 'integrity' && !!runId,
+    refetchInterval: (q) => (RUNNING(q.state.data?.status) ? 1500 : false),
   });
 
-  const downloadIntegrity = async () => {
-    try {
-      const blob = await projectsApi.validationReport(project!.id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `validation-${project!.id}.csv`; a.click();
-      URL.revokeObjectURL(url);
-    } catch (e: any) {
-      message.error(e?.response?.data?.message ?? 'Download failed');
-    }
+  const current: ValidationRun | null | undefined = runId ? integrityRun.data : integrityLatest.data;
+  const integrityLoading = integrityLatest.isLoading || (!!runId && integrityRun.isLoading && !current);
+
+  const startIntegrity = useMutation({
+    mutationFn: () => projectsApi.startValidation(project!.id),
+    onSuccess: (r: ValidationRun) => {
+      setRunId(r.id);
+      qc.setQueryData(['validation-run', project?.id, r.id], r);
+      message.info('Integrity check started — results will stream in as each table completes.');
+    },
+    onError: (e: any) => message.error(e?.response?.data?.message ?? 'Could not start integrity check'),
+  });
+
+  const downloadIntegrity = () => {
+    const rows = current?.results ?? [];
+    if (!rows.length) return;
+    const header = 'schema,table,source_rows,target_rows,null_pk,duplicate_keys,missing,extra,cdc_inserts,cdc_updates,cdc_deletes,status,issues';
+    const body = rows.map((r) => [
+      r.schema, r.table, r.sourceRows, r.targetRows, r.nullPrimaryKey, r.duplicateKeys,
+      r.missingRows, r.extraRows, r.cdcInserts, r.cdcUpdates, r.cdcDeletes, r.status,
+      `"${(r.issues ?? []).join('; ')}"`,
+    ].join(',')).join('\n');
+    const blob = new Blob([`${header}\n${body}`], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `validation-${project!.id}.csv`; a.click();
+    URL.revokeObjectURL(url);
   };
 
   const run = useMutation({
@@ -133,10 +167,11 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
           </Space>
         ) : (
           <Space>
-            <Button icon={<DownloadOutlined />} disabled={!integrity.data?.results?.length}
+            <Button icon={<DownloadOutlined />} disabled={!current?.results?.length}
               onClick={downloadIntegrity}>Download CSV</Button>
-            <Button type="primary" icon={<SyncOutlined />} loading={integrity.isFetching}
-              onClick={() => integrity.refetch()}>Re-check integrity</Button>
+            <Button type="primary" icon={<SyncOutlined />}
+              loading={startIntegrity.isPending || RUNNING(current?.status)}
+              onClick={() => startIntegrity.mutate()}>Run integrity check</Button>
           </Space>
         )
       }
@@ -242,28 +277,45 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
             children: (
               <>
                 <Alert type="info" showIcon style={{ marginBottom: 12 }}
-                  message="Deep data-integrity checks on the target: null primary keys, duplicate keys, and rows missing from / extra in the target versus the source. Heavier than row counts — run after a full load completes."
+                  message="Deep data-integrity checks on the target: null primary keys, duplicate keys, and rows missing from / extra in the target versus the source. Runs as a background job and streams results per table — safe to leave open while it works."
                 />
-                {integrity.data && (
-                  <Row gutter={16} style={{ marginBottom: 16 }}>
-                    <Col span={6}><Statistic title="Tables" value={integrity.data.tables} /></Col>
-                    <Col span={6}>
-                      <Statistic title="Passed" value={integrity.data.passed}
-                        valueStyle={{ color: '#3f8600' }} prefix={<CheckCircleOutlined />} />
-                    </Col>
-                    <Col span={6}>
-                      <Statistic title="Failed" value={integrity.data.failed}
-                        valueStyle={{ color: integrity.data.failed > 0 ? '#cf1322' : undefined }} />
-                    </Col>
-                  </Row>
+                {current && (
+                  <>
+                    <Row gutter={16} style={{ marginBottom: 8 }}>
+                      <Col span={6}>
+                        <Statistic title="Tables" value={`${current.completedTables}/${current.totalTables}`} />
+                      </Col>
+                      <Col span={6}>
+                        <Statistic title="Passed" value={current.passed}
+                          valueStyle={{ color: '#3f8600' }} prefix={<CheckCircleOutlined />} />
+                      </Col>
+                      <Col span={6}>
+                        <Statistic title="Failed" value={current.failed}
+                          valueStyle={{ color: current.failed > 0 ? '#cf1322' : undefined }} />
+                      </Col>
+                      <Col span={6}>
+                        <Statistic title="Status" value={current.status}
+                          valueStyle={{ color: current.status === 'FAILED' ? '#cf1322' : undefined }} />
+                      </Col>
+                    </Row>
+                    <Progress
+                      percent={current.totalTables ? Math.round((current.completedTables / current.totalTables) * 100) : 0}
+                      status={current.status === 'FAILED' ? 'exception' : RUNNING(current.status) ? 'active' : 'success'}
+                      style={{ marginBottom: 12 }}
+                    />
+                    {current.status === 'FAILED' && current.error && (
+                      <Alert type="error" showIcon style={{ marginBottom: 12 }}
+                        message="Validation run failed" description={current.error} />
+                    )}
+                  </>
                 )}
-                {!integrity.data && !integrity.isFetching
-                  ? <Empty description="No integrity report yet. Click Re-check integrity." />
+                {!current && !integrityLoading
+                  ? <Empty description="No integrity report yet. Click Run integrity check." />
                   : <Table<TableValidation>
                       rowKey={(r) => `${r.schema}.${r.table}`}
                       size="small"
-                      loading={integrity.isFetching}
-                      dataSource={integrity.data?.results}
+                      loading={integrityLoading || startIntegrity.isPending}
+                      dataSource={current?.results}
                       scroll={{ x: 'max-content' }}
                       pagination={{ pageSize: 12, hideOnSinglePage: true }}
                       expandable={{

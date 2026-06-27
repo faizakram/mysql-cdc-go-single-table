@@ -6,7 +6,7 @@ import type {
   ReconciliationRun, LoginResponse, MeResponse, UserAdmin, RoleName, AlertItem, ConstraintApplyResult,
   Schedule, ScheduleRequest, OrchestratorStatus, AuditPage, EngineSpec, CdcReadiness,
   MigrationPlan, SchemaObjectInventory, DryRunReport, CostEstimate,
-  ValidationReport, Recommendation, PluginInfo, TableProfile, Page, DbType,
+  ValidationReport, ValidationRun, Recommendation, PluginInfo, TableProfile, Page, DbType,
 } from './types';
 
 // Drop undefined/empty params so optional filters don't hit the wire as "?q=".
@@ -134,6 +134,13 @@ export const projectsApi = {
   validation: (id: string) => http.get<ValidationReport>(`/projects/${id}/validation`).then((r) => r.data),
   validationReport: (id: string) =>
     http.get(`/projects/${id}/validation/report.csv`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  // Async, job-based validation (#150/#153): start a run, then poll it for live progress.
+  startValidation: (id: string) =>
+    http.post<ValidationRun>(`/projects/${id}/validation`).then((r) => r.data),
+  validationLatest: (id: string) =>
+    http.get<ValidationRun | null>(`/projects/${id}/validation/latest`).then((r) => r.data),
+  validationRun: (id: string, runId: string) =>
+    http.get<ValidationRun>(`/projects/${id}/validation/runs/${runId}`).then((r) => r.data),
   recommendations: (id: string) => http.get<Recommendation[]>(`/projects/${id}/recommendations`).then((r) => r.data),
 };
 
