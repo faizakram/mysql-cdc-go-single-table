@@ -198,6 +198,9 @@ class ConnectorConfigServiceTest {
         assertThat(source).containsEntry("tombstones.on.delete", "true");
         assertThat(sink).containsEntry("delete.enabled", "true");
         assertThat(sink.get("transforms").toString()).doesNotContain("renameDeleted");
+        // DELETE events must pass through (default "drop" would swallow them → row never removed).
+        assertThat(sink).containsEntry("transforms.unwrap.delete.handling.mode", "none");
+        assertThat(sink).containsEntry("transforms.unwrap.drop.tombstones", "false");
     }
 
     @Test

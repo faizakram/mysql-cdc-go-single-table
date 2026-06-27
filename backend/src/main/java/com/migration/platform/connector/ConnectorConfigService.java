@@ -81,6 +81,10 @@ public class ConnectorConfigService {
                 : "io.debezium.transforms.ExtractNewRecordState");
 
         if (hard) {
+            // Pass DELETE events through to the sink (default mode "drop" would swallow them, so the
+            // row would never be removed on the target). With delete.enabled=true the JDBC sink then
+            // deletes by primary key. Keep Kafka tombstones too.
+            cfg.put("transforms.unwrap.delete.handling.mode", "none");
             cfg.put("transforms.unwrap.drop.tombstones", "false");
         } else {
             cfg.put("transforms.unwrap.delete.handling.mode", "rewrite");
