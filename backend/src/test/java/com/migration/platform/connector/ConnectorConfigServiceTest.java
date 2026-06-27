@@ -201,6 +201,9 @@ class ConnectorConfigServiceTest {
         // DELETE events must pass through (default "drop" would swallow them → row never removed).
         assertThat(sink).containsEntry("transforms.unwrap.delete.handling.mode", "none");
         assertThat(sink).containsEntry("transforms.unwrap.drop.tombstones", "false");
+        // #161: collapse per-key events in a batch so insert+delete of the same row under load
+        // resolves to the delete (no phantom rows on the target).
+        assertThat(sink).containsEntry("use.reduction.buffer", "true");
     }
 
     @Test
@@ -217,6 +220,8 @@ class ConnectorConfigServiceTest {
         assertThat(sink).containsEntry("delete.enabled", "false");
         assertThat(sink.get("transforms").toString()).contains("renameDeleted", "castDeleted");
         assertThat(sink).containsEntry("transforms.renameDeleted.renames", "__deleted:__cdc_deleted");
+        // Reduction buffer is a HARD-delete concern only; SOFT delete never issues target deletes.
+        assertThat(sink).doesNotContainKey("use.reduction.buffer");
     }
 
     @Test

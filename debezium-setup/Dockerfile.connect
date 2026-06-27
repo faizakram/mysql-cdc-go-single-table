@@ -12,6 +12,10 @@ COPY custom-smt/ ./
 RUN mvn -B -q clean package
 
 # ---- Stage 2: Connect runtime with the SMT installed ----
-FROM debezium/connect:2.5
+# Debezium 3.0 line: the JDBC sink (2.5.4) silently lost HARD deletes for keys that were
+# inserted+deleted within the same batched window under load (#161); 3.0's rewritten JDBC sink
+# + working reduction buffer fixes it. The custom SMT uses the stable Connect transforms API,
+# so it runs unchanged on the newer runtime.
+FROM debezium/connect:3.0.0.Final
 # /kafka/connect is on the Connect plugin path; each plugin lives in its own subdirectory.
 COPY --from=smt /build/target/snake-case-transform-*.jar /kafka/connect/custom-smt/
