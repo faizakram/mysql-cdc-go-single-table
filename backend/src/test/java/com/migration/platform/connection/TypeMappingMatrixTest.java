@@ -39,4 +39,24 @@ class TypeMappingMatrixTest {
         assertThat(m.targetType()).isEqualTo("TEXT");
         assertThat(m.note()).contains("No canonical mapping");
     }
+
+    @Test
+    void driverTypeModifiersDoNotMakeCommonTypesUnmappable() {
+        // SQL Server's JDBC driver reports IDENTITY columns as "int identity" / "bigint identity";
+        // these must map cleanly (no false "unmappable" note that warned on every table).
+        TypeMappingMatrix.Mapped idInt = TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "int identity", 0);
+        assertThat(idInt.targetType()).isEqualTo("INTEGER");
+        assertThat(idInt.note()).isNull();
+
+        TypeMappingMatrix.Mapped idBig = TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "bigint identity", 0);
+        assertThat(idBig.targetType()).isEqualTo("BIGINT");
+        assertThat(idBig.note()).isNull();
+
+        // MySQL appends " unsigned" / " zerofill" — also base types, not unmappable.
+        assertThat(TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "int unsigned", 0).note()).isNull();
+
+        // A genuinely unsupported type is still flagged (e.g. SQL Server geography).
+        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "geography", 0).note())
+                .contains("No canonical mapping");
+    }
 }
