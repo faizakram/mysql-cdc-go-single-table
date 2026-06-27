@@ -1,0 +1,71 @@
+# HA data plane via the Strimzi operator (recommended over hand-rolled StatefulSets).
+# Install Strimzi first:  kubectl create -f 'https://strimzi.io/install/latest?namespace=cdc-platform' -n cdc-platform
+#
+# This gives a 3-broker Kafka quorum and a 2-worker distributed Kafka Connect cluster. Connect's
+# config/offset/status topics are replicated (RF=3), so connector state survives a worker or
+# broker loss and connectors rebalance automatically.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: kafka-cluster
+  namespace: cdc-platform
+spec:
+  kafka:
+    replicas: 3
+    listeners:
+      - { name: plain, port: 9092, type: internal, tls: false }
+      - { name: tls, port: 9093, type: internal, tls: true }
+    config:
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      min.insync.replicas: 2
+    storage:
+      type: persistent-claim
+      size: 100Gi
+      deleteClaim: false
+  zookeeper:
+    replicas: 3
+    storage:
+      type: persistent-claim
+      size: 20Gi
+      deleteClaim: false
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnect
+metadata:
+  name: connect-cluster
+  namespace: cdc-platform
+  annotations:
+    strimzi.io/use-connector-resources: "true"
+spec:
+  replicas: 2
+  bootstrapServers: kafka-cluster-kafka-bootstrap:9093
+  tls:
+    trustedCertificates:
+      - { secretName: kafka-cluster-cluster-ca-cert, certificate: ca.crt }
+  config:
+    group.id: connect-cluster
+    config.storage.replication.factor: 3
+    offset.storage.replication.factor: 3
+    status.storage.replication.factor: 3
+  # Build an image bundling the Debezium SQL Server + JDBC sink connectors and the custom SMT jar.
+  build:
+    output:
+      type: docker
+      image: ghcr.io/faizakram/cdc-connect:latest
+    plugins:
+      - name: debezium-sqlserver
+        artifacts:
+          - { type: tgz, url: "https://repo1.maven.org/maven2/io/debezium/debezium-connector-sqlserver/2.5.0.Final/debezium-connector-sqlserver-2.5.0.Final-plugin.tar.gz" }
+      - name: debezium-jdbc
+        artifacts:
+          - { type: tgz, url: "https://repo1.maven.org/maven2/io/debezium/debezium-connector-jdbc/2.5.0.Final/debezium-connector-jdbc-2.5.0.Final-plugin.tar.gz" }
+      - name: custom-smt
+        artifacts:
+          # Publish the SMT jar (built by smt-and-security.yml) to a reachable URL/registry.
+          - { type: jar, url: "https://artifacts.example.com/snake-case-transform-1.0.0.jar" }

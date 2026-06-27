@@ -20,11 +20,14 @@ import java.util.Map;
  */
 public abstract class SnakeCaseTransform<R extends ConnectRecord<R>> implements Transformation<R> {
 
+    /** Naming strategy (#84): snake_case (default, back-compat) | camel_case | pascal_case | upper_case. */
+    private String strategy = "snake_case";
+
     @Override
     public R apply(R record) {
-        // Transform topic name to snake_case for table names
+        // Transform topic name (table) per the configured naming strategy.
         final String originalTopic = record.topic();
-        final String snakeCaseTopic = toSnakeCase(originalTopic);
+        final String snakeCaseTopic = transformName(originalTopic);
 
         // Determine which schema and value to transform based on subclass
         final Schema originalSchema = getSchema(record);
@@ -75,7 +78,7 @@ public abstract class SnakeCaseTransform<R extends ConnectRecord<R>> implements 
             case STRUCT:
                 builder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct());
                 for (Field field : schema.fields()) {
-                    String snakeCaseName = toSnakeCase(field.name());
+                    String snakeCaseName = transformName(field.name());
                     // Recursively transform nested struct schemas
                     Schema fieldSchema = field.schema();
                     if (fieldSchema.type() == Schema.Type.STRUCT) {
@@ -105,7 +108,7 @@ public abstract class SnakeCaseTransform<R extends ConnectRecord<R>> implements 
             // We need to check all original fields to find which one converts to this snake_case name
             Field matchingOriginalField = null;
             for (Field originalField : original.schema().fields()) {
-                if (toSnakeCase(originalField.name()).equals(snakeCaseName)) {
+                if (transformName(originalField.name()).equals(snakeCaseName)) {
                     matchingOriginalField = originalField;
                     break;
                 }
@@ -137,26 +140,64 @@ public abstract class SnakeCaseTransform<R extends ConnectRecord<R>> implements 
      *   HTTPSConnection -> https_connection
      *   userName -> user_name
      */
-    private String toSnakeCase(String input) {
-        if (input == null || input.isEmpty()) {
-            return input;
+    /**
+     * Apply the configured naming strategy to an identifier (#84). Tokenizes the input on
+     * underscores and case boundaries, then re-joins per strategy. The bare table name inside a
+     * dotted topic (prefix.db.schema.table) keeps its dots; only the final segment is transformed
+     * here because Debezium topics arrive as the table name at this stage after routing.
+     */
+    String transformName(String input) {
+        if (input == null || input.isEmpty()) return input;
+        // Keep dotted topic prefixes intact; only transform the last segment (the table).
+        int dot = input.lastIndexOf('.');
+        if (dot >= 0) {
+            return input.substring(0, dot + 1) + transformName(input.substring(dot + 1));
         }
+        java.util.List<String> words = tokenize(input);
+        if (words.isEmpty()) return input;
+        switch (strategy) {
+            case "upper_case":
+                return String.join("_", words).toUpperCase();
+            case "camel_case": {
+                StringBuilder b = new StringBuilder(words.get(0));
+                for (int i = 1; i < words.size(); i++) b.append(capitalize(words.get(i)));
+                return b.toString();
+            }
+            case "pascal_case": {
+                StringBuilder b = new StringBuilder();
+                for (String w : words) b.append(capitalize(w));
+                return b.toString();
+            }
+            case "snake_case":
+            default:
+                return String.join("_", words);
+        }
+    }
 
-        // Handle sequences of capitals followed by lowercase (HTTPSConnection -> HTTPS_Connection)
-        String result = input.replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2");
-        
-        // Handle lowercase followed by uppercase (camelCase -> camel_Case)
-        result = result.replaceAll("([a-z\\d])([A-Z])", "$1_$2");
-        
-        // Convert to lowercase
-        return result.toLowerCase();
+    /** Split an identifier into lowercase words on underscores and case boundaries. */
+    private java.util.List<String> tokenize(String input) {
+        String spaced = input
+                .replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2")   // HTTPSConn -> HTTPS_Conn
+                .replaceAll("([a-z\\d])([A-Z])", "$1_$2")        // camelCase -> camel_Case
+                .replace('_', ' ');
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String part : spaced.trim().split("\\s+")) {
+            if (!part.isEmpty()) out.add(part.toLowerCase());
+        }
+        return out;
+    }
+
+    private String capitalize(String w) {
+        return w.isEmpty() ? w : Character.toUpperCase(w.charAt(0)) + w.substring(1);
     }
 
     protected abstract R newRecord(R record, Schema updatedSchema, Object updatedValue);
 
     @Override
     public ConfigDef config() {
-        return new ConfigDef();
+        return new ConfigDef().define("strategy", ConfigDef.Type.STRING, "snake_case",
+                ConfigDef.Importance.MEDIUM,
+                "Naming strategy: snake_case | camel_case | pascal_case | upper_case");
     }
 
     @Override
@@ -166,7 +207,10 @@ public abstract class SnakeCaseTransform<R extends ConnectRecord<R>> implements 
 
     @Override
     public void configure(Map<String, ?> configs) {
-        // No configuration needed
+        Object s = configs.get("strategy");
+        if (s != null && !s.toString().isBlank()) {
+            this.strategy = s.toString().trim().toLowerCase();
+        }
     }
 
     /**

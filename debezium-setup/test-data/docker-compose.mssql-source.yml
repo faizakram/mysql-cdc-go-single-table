@@ -1,0 +1,23 @@
+# Standalone MS SQL Server source for manual migration testing.
+# Rich schema (10 tables, PK/FK/self-FK/computed, full data-type coverage) + ~10K rows + CDC enabled.
+# Seed it with:  ./seed.sh   (starts the server, waits, applies mssql-init.sql via a tools container)
+#
+# Reach it from the platform/Debezium as host=host.docker.internal port=1433 user=sa.
+name: mssql-test
+
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql-test-source
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Str0ngP@ssw0rd!"
+      MSSQL_PID: Developer
+      MSSQL_AGENT_ENABLED: "true"   # required: CDC capture/cleanup run as SQL Agent jobs
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-test-data:/var/opt/mssql
+
+volumes:
+  mssql-test-data:

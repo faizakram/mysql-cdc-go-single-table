@@ -3,8 +3,10 @@ name: CI/CD
 on:
   push:
     branches: [ main, develop ]
+    paths-ignore: [ 'platform/**', 'docs/**', 'debezium-setup/**', 'deploy/**', '.github/workflows/platform-ci.yml', '.github/workflows/smt-and-security.yml', '**/*.md' ]
   pull_request:
     branches: [ main ]
+    paths-ignore: [ 'platform/**', 'docs/**', 'debezium-setup/**', 'deploy/**', '.github/workflows/platform-ci.yml', '.github/workflows/smt-and-security.yml', '**/*.md' ]
 
 jobs:
   test:

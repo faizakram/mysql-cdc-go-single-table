@@ -1,0 +1,85 @@
+# Control-plane (Java backend) — HA Deployment with 2+ replicas behind a Service.
+# The control plane is stateless (all state lives in the external metadata Postgres), so it scales
+# horizontally and tolerates node loss. Set the image to your published platform-backend tag.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-backend
+  namespace: cdc-platform
+  labels: { app: platform-backend }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: platform-backend }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: { app: platform-backend }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: platform-backend }
+      containers:
+        - name: backend
+          image: ghcr.io/faizakram/platform-backend:latest
+          ports: [{ containerPort: 8090 }]
+          envFrom:
+            - configMapRef: { name: platform-config }
+            - secretRef: { name: platform-secrets }
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8090 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8090 }
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          resources:
+            requests: { cpu: "500m", memory: "768Mi" }
+            limits: { cpu: "2", memory: "1536Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-backend
+  namespace: cdc-platform
+spec:
+  selector: { app: platform-backend }
+  ports:
+    - { name: http, port: 8090, targetPort: 8090 }
+---
+# Horizontal autoscaling on CPU. Scheduled/reconciliation jobs are guarded for multi-instance
+# safety (see #54 job-queue / leader election) so running 2+ replicas is safe.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: platform-backend
+  namespace: cdc-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: platform-backend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+---
+# Keep at least one replica available during voluntary disruptions (node drain, upgrades).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: platform-backend
+  namespace: cdc-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: platform-backend }
