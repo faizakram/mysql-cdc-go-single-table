@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -118,22 +119,7 @@ public class JobService {
             projects.save(project);
             audit.record("JOB_START", job.getProjectId().toString(), java.util.Map.of("jobId", id.toString()));
 
-            // Persist per-table status for this run in the metadata store (replaces JSON, #19).
-            // Rows start PENDING; ProgressTracker advances rowsSynced/phase/status as the run proceeds (#129).
-            String snapshotMode = com.migration.platform.connector.MigrationConfig
-                    .from(project.getConfig(), project.getName()).snapshotMode();
-            boolean snapshotsData = !java.util.Set.of("schema_only", "no_data").contains(snapshotMode);
-            tableStatus.deleteByJobId(job.getId());
-            for (String fq : selectedTables(project)) {
-                String[] parts = fq.split("\\.", 2);
-                TableStatus ts = new TableStatus();
-                ts.setJobId(job.getId());
-                ts.setSchemaName(parts.length == 2 ? parts[0] : "dbo");
-                ts.setTableName(parts.length == 2 ? parts[1] : parts[0]);
-                ts.setPhase(snapshotsData ? "DATA" : "CDC");
-                ts.setStatus("PENDING");
-                tableStatus.save(ts);
-            }
+            seedTableStatus(job, project);
         } catch (IllegalArgumentException e) {
             throw e; // surfaced as 400 (e.g. missing connections)
         } catch (Exception e) {
@@ -177,6 +163,68 @@ public class JobService {
         job.setFinishedAt(OffsetDateTime.now());
         audit.record("JOB_STOP", job.getProjectId().toString(), java.util.Map.of("jobId", id.toString()));
         return JobResponse.from(repo.save(job));
+    }
+
+    /**
+     * Re-run a clean full load (#131): reset the source connector's committed offsets so Debezium
+     * re-runs its initial snapshot, then resume. Restarting normally only resumes from offsets and
+     * never re-snapshots — this is the explicit, guarded way to recapture everything. The sink keeps
+     * running and re-applies the re-emitted rows (upsert), refreshing the target.
+     */
+    @Transactional
+    public JobResponse reloadFull(UUID id) {
+        MigrationJob job = find(id);
+        if (job.getSourceConnectorName() == null
+                || !EnumSet.of(JobStatus.RUNNING, JobStatus.SNAPSHOT, JobStatus.PAUSED).contains(job.getStatus())) {
+            throw new IllegalArgumentException(
+                    "Re-run full load needs an active run (running, snapshotting or paused) with deployed connectors");
+        }
+        MigrationProject project = requireProject(job.getProjectId());
+        String source = job.getSourceConnectorName();
+        try {
+            connect.stop(source);          // → STOPPED (required before clearing offsets)
+            resetOffsetsWithRetry(source); // clear committed offsets (Connect 3.6+)
+            connect.resume(source);        // resume → re-snapshot from scratch
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Could not reset source offsets; Kafka Connect must support the offsets API (3.6+): "
+                            + e.getMessage(), e);
+        }
+        job.setStatus(JobStatus.SNAPSHOT);
+        job.setPhase("snapshot");
+        job.setStartedAt(OffsetDateTime.now());
+        job.setError(null);
+        seedTableStatus(job, project);
+        audit.record("JOB_RELOAD", job.getProjectId().toString(), java.util.Map.of("jobId", id.toString()));
+        return JobResponse.from(repo.save(job));
+    }
+
+    /** Deleting offsets requires the connector to have reached STOPPED, which the herder applies async. */
+    private void resetOffsetsWithRetry(String connector) throws InterruptedException {
+        RuntimeException last = null;
+        for (int attempt = 0; attempt < 6; attempt++) {
+            try { connect.deleteOffsets(connector); return; }
+            catch (RuntimeException e) { last = e; Thread.sleep(500); }
+        }
+        if (last != null) throw last;
+    }
+
+    /** (Re)seed per-table status rows to PENDING for a fresh run (#19, #129). */
+    private void seedTableStatus(MigrationJob job, MigrationProject project) {
+        String snapshotMode = com.migration.platform.connector.MigrationConfig
+                .from(project.getConfig(), project.getName()).snapshotMode();
+        boolean snapshotsData = !java.util.Set.of("schema_only", "no_data").contains(snapshotMode);
+        tableStatus.deleteByJobId(job.getId());
+        for (String fq : selectedTables(project)) {
+            String[] parts = fq.split("\\.", 2);
+            TableStatus ts = new TableStatus();
+            ts.setJobId(job.getId());
+            ts.setSchemaName(parts.length == 2 ? parts[0] : "dbo");
+            ts.setTableName(parts.length == 2 ? parts[1] : parts[0]);
+            ts.setPhase(snapshotsData ? "DATA" : "CDC");
+            ts.setStatus("PENDING");
+            tableStatus.save(ts);
+        }
     }
 
     private void forEachConnector(MigrationJob job, java.util.function.Consumer<String> op) {

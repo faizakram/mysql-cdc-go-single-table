@@ -66,4 +66,10 @@ public class JobController {
     public JobResponse stop(@PathVariable UUID id) {
         return service.stop(id);
     }
+
+    /** Re-run a clean full load: reset source offsets so Debezium re-snapshots (#131). */
+    @PostMapping("/jobs/{id}/reload")
+    public JobResponse reload(@PathVariable UUID id) {
+        return service.reloadFull(id);
+    }
 }

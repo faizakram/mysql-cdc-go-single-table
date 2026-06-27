@@ -3,7 +3,7 @@ import {
 } from 'antd';
 import {
   PlayCircleOutlined, PauseOutlined, StepForwardOutlined, StopOutlined,
-  PlusOutlined, EyeOutlined,
+  PlusOutlined, EyeOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -59,7 +59,7 @@ const STATUS_COLOR: Record<JobStatus, string> = {
 };
 
 export default function JobsDrawer({ project, onClose }: { project: Project | null; onClose: () => void }) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const qc = useQueryClient();
   const [preview, setPreview] = useState<unknown | null>(null);
   const open = project !== null;
@@ -88,6 +88,16 @@ export default function JobsDrawer({ project, onClose }: { project: Project | nu
   const pause = act(jobsApi.pause, 'Paused');
   const resume = act(jobsApi.resume, 'Resumed');
   const stop = act(jobsApi.stop, 'Stopped');
+  const reload = act(jobsApi.reload, 'Full reload started — re-snapshotting');
+
+  const confirmReload = (id: string) => modal.confirm({
+    title: 'Re-run full load?',
+    okText: 'Re-run full load',
+    okButtonProps: { danger: true },
+    content: 'Resets the source connector offsets so the snapshot runs again from scratch and the '
+      + 'target is fully re-synced (rows are re-applied as upserts). Requires Kafka Connect 3.6+.',
+    onOk: () => reload.mutate(id),
+  });
 
   const showPreview = async () => {
     try { setPreview(await jobsApi.preview(project!.id)); }
@@ -124,6 +134,11 @@ export default function JobsDrawer({ project, onClose }: { project: Project | nu
           <Button size="small" danger icon={<StopOutlined />}
             disabled={['STOPPED', 'COMPLETED'].includes(j.status)}
             onClick={() => stop.mutate(j.id)} />
+          <Tooltip title="Re-run full load (re-snapshot)">
+            <Button size="small" icon={<ReloadOutlined />}
+              disabled={!['RUNNING', 'SNAPSHOT', 'PAUSED'].includes(j.status)}
+              loading={reload.isPending} onClick={() => confirmReload(j.id)} />
+          </Tooltip>
         </Space>
       ),
     },
