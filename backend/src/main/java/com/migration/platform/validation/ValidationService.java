@@ -66,7 +66,7 @@ public class ValidationService {
                 String[] parts = fq.split("\\.", 2);
                 String schema = parts.length == 2 ? parts[0] : "dbo";
                 String table = parts.length == 2 ? parts[1] : parts[0];
-                results.add(validateTable(sc, tc, src.getDbType(), schema, table, mc, softDelete));
+                results.add(validateTable(sc, tc, src.getDbType(), tgt.getDbType(), schema, table, mc, softDelete));
             }
         } catch (Exception e) {
             throw new IllegalArgumentException("Validation failed: " + e.getMessage());
@@ -76,12 +76,14 @@ public class ValidationService {
         return new ValidationReport(results.size(), passed, failed, results);
     }
 
-    private TableValidation validateTable(Connection sc, Connection tc, DbType srcEngine,
+    private TableValidation validateTable(Connection sc, Connection tc, DbType srcEngine, DbType tgtEngine,
                                           String schema, String table, MigrationConfig mc, boolean softDelete) {
         try {
-            String tgtTable = mc.targetSchema() + "." + TargetNaming.apply(table, mc.namingStrategy());
+            // Quote target identifiers so case-sensitive names (e.g. PascalCase under PRESERVE) match;
+            // unquoted names get folded to lower case by PostgreSQL and miss a "OrderItems"-style table.
+            String tgtTable = qid(tgtEngine, mc.targetSchema()) + "." + qid(tgtEngine, TargetNaming.apply(table, mc.namingStrategy()));
             // The soft-delete marker is renamed by the naming strategy too (e.g. snake_case -> cdc_deleted).
-            String deleteMarker = TargetNaming.apply("__cdc_deleted", mc.namingStrategy());
+            String deleteMarker = qid(tgtEngine, TargetNaming.apply("__cdc_deleted", mc.namingStrategy()));
             String softFilter = softDelete ? " WHERE " + deleteMarker + " IS NOT TRUE" : "";
 
             long sourceRows = scalar(sc, "SELECT COUNT(*) FROM " + sourceQualify(srcEngine, schema, table));
@@ -91,7 +93,7 @@ public class ValidationService {
 
             long nullPk = 0, dupKeys = 0, missing = 0;
             if (pk != null) {
-                String tgtPk = TargetNaming.apply(pk, mc.namingStrategy());
+                String tgtPk = qid(tgtEngine, TargetNaming.apply(pk, mc.namingStrategy()));
                 nullPk = scalar(tc, "SELECT COUNT(*) FROM " + tgtTable + " WHERE " + tgtPk + " IS NULL");
                 dupKeys = scalar(tc, "SELECT COALESCE(SUM(c-1),0) FROM (SELECT " + tgtPk
                         + " AS k, COUNT(*) c FROM " + tgtTable + " GROUP BY " + tgtPk + " HAVING COUNT(*)>1) d");
@@ -134,6 +136,15 @@ public class ValidationService {
             default -> schema + "." + table;
         };
     }
+    /** Quote a target identifier for the target engine so case-sensitive names match. */
+    private String qid(DbType engine, String id) {
+        return switch (engine) {
+            case MYSQL -> "`" + id.replace("`", "``") + "`";
+            case SQLSERVER -> "[" + id.replace("]", "]]") + "]";
+            default -> "\"" + id.replace("\"", "\"\"") + "\"";   // PostgreSQL / Oracle / Db2
+        };
+    }
+
     private String pkRef(DbType engine, String pk) {
         return engine == DbType.SQLSERVER ? "[" + pk + "]" : pk;
     }
