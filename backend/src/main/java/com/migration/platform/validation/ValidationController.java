@@ -2,18 +2,21 @@ package com.migration.platform.validation;
 
 import com.migration.platform.validation.dto.ValidationDtos.TableValidation;
 import com.migration.platform.validation.dto.ValidationDtos.ValidationReport;
+import com.migration.platform.validation.dto.ValidationDtos.ValidationRunDto;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.UUID;
 
-/** Advanced validation report + CSV export (#96). */
+/** Advanced validation report + CSV export (#96), now job-based for scale (#150). */
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/validation")
 public class ValidationController {
@@ -24,6 +27,31 @@ public class ValidationController {
         this.service = service;
     }
 
+    /** Enqueue a background validation run; returns immediately with the run (status PENDING/RUNNING). */
+    @PostMapping
+    public ValidationRunDto start(@PathVariable UUID projectId) {
+        return service.start(projectId);
+    }
+
+    /** Most recent run for the project (with per-table results), or null if none started yet. */
+    @GetMapping("/latest")
+    public ValidationRunDto latest(@PathVariable UUID projectId) {
+        return service.latest(projectId);
+    }
+
+    /** Run history (metadata only). */
+    @GetMapping("/runs")
+    public List<ValidationRunDto> runs(@PathVariable UUID projectId) {
+        return service.history(projectId);
+    }
+
+    /** A single run with the results computed so far — polled by the UI for live progress. */
+    @GetMapping("/runs/{runId}")
+    public ValidationRunDto run(@PathVariable UUID projectId, @PathVariable UUID runId) {
+        return service.report(runId);
+    }
+
+    /** Legacy synchronous report (kept for backward compatibility / small projects). */
     @GetMapping
     public ValidationReport validate(@PathVariable UUID projectId) {
         return service.validate(projectId);
