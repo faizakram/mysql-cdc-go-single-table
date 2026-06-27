@@ -32,6 +32,21 @@ public class KafkaConnectClient {
                 .body(new ParameterizedTypeReference<Map<String, Object>>() {});
     }
 
+    /**
+     * Committed source offsets for a connector (Kafka Connect 3.6+). For a Debezium source the offset
+     * payload carries the snapshot flag, which lets us tell snapshot-in-progress from streaming.
+     * Returns an empty map if the running Connect build doesn't expose the endpoint or it errors.
+     */
+    public Map<String, Object> connectorOffsets(String name) {
+        try {
+            return client.get().uri("/connectors/{name}/offsets", name)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
     public Map<String, Object> createConnector(Map<String, Object> config) {
         return client.post().uri("/connectors")
                 .body(config)

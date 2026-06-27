@@ -119,6 +119,10 @@ public class JobService {
             audit.record("JOB_START", job.getProjectId().toString(), java.util.Map.of("jobId", id.toString()));
 
             // Persist per-table status for this run in the metadata store (replaces JSON, #19).
+            // Rows start PENDING; ProgressTracker advances rowsSynced/phase/status as the run proceeds (#129).
+            String snapshotMode = com.migration.platform.connector.MigrationConfig
+                    .from(project.getConfig(), project.getName()).snapshotMode();
+            boolean snapshotsData = !java.util.Set.of("schema_only", "no_data").contains(snapshotMode);
             tableStatus.deleteByJobId(job.getId());
             for (String fq : selectedTables(project)) {
                 String[] parts = fq.split("\\.", 2);
@@ -126,8 +130,8 @@ public class JobService {
                 ts.setJobId(job.getId());
                 ts.setSchemaName(parts.length == 2 ? parts[0] : "dbo");
                 ts.setTableName(parts.length == 2 ? parts[1] : parts[0]);
-                ts.setPhase("CDC");
-                ts.setStatus("IN_PROGRESS");
+                ts.setPhase(snapshotsData ? "DATA" : "CDC");
+                ts.setStatus("PENDING");
                 tableStatus.save(ts);
             }
         } catch (IllegalArgumentException e) {

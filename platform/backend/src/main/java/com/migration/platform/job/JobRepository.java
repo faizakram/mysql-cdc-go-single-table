@@ -10,4 +10,6 @@ public interface JobRepository extends JpaRepository<MigrationJob, UUID> {
     List<MigrationJob> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
 
     long countByStatusIn(Collection<JobStatus> statuses);
+
+    List<MigrationJob> findByStatusIn(Collection<JobStatus> statuses);
 }

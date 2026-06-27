@@ -1,5 +1,5 @@
 import {
-  Drawer, Button, Table, Tag, Space, App, Modal, Typography, Empty,
+  Drawer, Button, Table, Tag, Space, App, Modal, Typography, Empty, Tooltip,
 } from 'antd';
 import {
   PlayCircleOutlined, PauseOutlined, StepForwardOutlined, StopOutlined,
@@ -13,11 +13,16 @@ import type { Job, JobStatus, JobTableStatus, Project } from '../api/types';
 const TS_COLOR: Record<string, string> = {
   PENDING: 'default', IN_PROGRESS: 'processing', COMPLETED: 'green', FAILED: 'red',
 };
+const PHASE_COLOR: Record<string, string> = {
+  SCHEMA: 'purple', DATA: 'blue', CDC: 'cyan',
+};
 
-function JobTables({ jobId }: { jobId: string }) {
+function JobTables({ jobId, live }: { jobId: string; live: boolean }) {
   const { data, isLoading } = useQuery({
     queryKey: ['job-tables', jobId],
     queryFn: () => jobsApi.tables(jobId),
+    // Poll while the run is active so per-table rows/phase advance in view (#129).
+    refetchInterval: live ? 5000 : false,
   });
   if (!isLoading && (!data || data.length === 0)) {
     return <Typography.Text type="secondary">No per-table status (start the run to populate).</Typography.Text>;
@@ -28,9 +33,21 @@ function JobTables({ jobId }: { jobId: string }) {
       dataSource={data} pagination={false}
       columns={[
         { title: 'Table', render: (_: unknown, t: JobTableStatus) => `${t.schemaName}.${t.tableName}` },
-        { title: 'Phase', dataIndex: 'phase' },
-        { title: 'Status', dataIndex: 'status', render: (s: string) => <Tag color={TS_COLOR[s] ?? 'default'}>{s}</Tag> },
-        { title: 'Rows', dataIndex: 'rowsSynced' },
+        {
+          title: 'Phase', dataIndex: 'phase',
+          render: (p: string) => <Tag color={PHASE_COLOR[p] ?? 'default'}>{p}</Tag>,
+        },
+        {
+          title: 'Status', dataIndex: 'status',
+          render: (s: string, t: JobTableStatus) => {
+            const tag = <Tag color={TS_COLOR[s] ?? 'default'}>{s}</Tag>;
+            return t.error ? <Tooltip title={t.error}>{tag}</Tooltip> : tag;
+          },
+        },
+        {
+          title: 'Rows synced', dataIndex: 'rowsSynced', align: 'right' as const,
+          render: (n: number) => (n ?? 0).toLocaleString(),
+        },
       ]}
     />
   );
@@ -129,7 +146,9 @@ export default function JobsDrawer({ project, onClose }: { project: Project | nu
       {jobs.data && jobs.data.length === 0
         ? <Empty description="No runs yet — create one, then Start to deploy the connectors." />
         : <Table rowKey="id" loading={jobs.isLoading} dataSource={jobs.data} columns={columns} pagination={false}
-            expandable={{ expandedRowRender: (j) => <JobTables jobId={j.id} /> }} />}
+            expandable={{ expandedRowRender: (j) => (
+              <JobTables jobId={j.id} live={['SNAPSHOT', 'RUNNING'].includes(j.status)} />
+            ) }} />}
 
       <Modal title="Connector preview (secrets masked)" open={preview !== null}
         footer={null} width={760} onCancel={() => setPreview(null)}>
