@@ -1,0 +1,26 @@
+# promtail: ship Docker container logs to Loki (#50 centralized logging).
+# Discovers containers via the Docker socket and labels by container name. When the platform runs
+# with SPRING_PROFILES_ACTIVE=json, its log lines are structured JSON, queryable by field in Grafana.
+server:
+  http_listen_port: 9080
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 10s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      # Tag the control-plane stream so the dashboard's Loki panel can select it.
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/platform-backend'
+        target_label: service
+        replacement: migration-platform

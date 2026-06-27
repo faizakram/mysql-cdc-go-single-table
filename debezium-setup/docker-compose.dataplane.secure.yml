@@ -1,0 +1,22 @@
+# Hardening override for the data plane (#45). Apply on top of docker-compose.dataplane.yml:
+#   docker compose -f docker-compose.dataplane.yml -f docker-compose.dataplane.secure.yml up -d
+#
+# Effect:
+#  - Kafka Connect's REST port is NOT published to the host — it is reachable only inside the
+#    cdc-dataplane network, so the only thing that can mutate connectors is the control-plane
+#    backend running on that same network (which enforces JWT + RBAC + audit).
+#  - SQL Server / Postgres ports are likewise unpublished; the backend connects in-network.
+# Override the basic-auth env if you also front Connect with an authenticating proxy.
+name: cdc-dataplane
+
+services:
+  connect:
+    # Drop the host port mapping entirely (no "8083:8083"). Internal DNS name `connect:8083` still
+    # works for in-network clients.
+    ports: !reset []
+
+  sqlserver:
+    ports: !reset []
+
+  postgres-target:
+    ports: !reset []

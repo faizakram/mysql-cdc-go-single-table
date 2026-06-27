@@ -54,17 +54,19 @@ services:
       - kafka
     ports:
       - "8083:8083"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      BOOTSTRAP_SERVERS: kafka:9092
+      BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       GROUP_ID: 1
       CONFIG_STORAGE_TOPIC: debezium_connect_configs
       OFFSET_STORAGE_TOPIC: debezium_connect_offsets
       STATUS_STORAGE_TOPIC: debezium_connect_statuses
       # Increase timeout for large tables
-      CONNECT_TASK_SHUTDOWN_GRACEFUL_TIMEOUT_MS: 30000
-      CONNECT_OFFSET_FLUSH_INTERVAL_MS: 60000
+      CONNECT_TASK_SHUTDOWN_GRACEFUL_TIMEOUT_MS: ${CONNECT_TASK_SHUTDOWN_GRACEFUL_TIMEOUT_MS:-30000}
+      CONNECT_OFFSET_FLUSH_INTERVAL_MS: ${CONNECT_OFFSET_FLUSH_INTERVAL_MS:-60000}
       # Memory settings for 500 tables
-      KAFKA_HEAP_OPTS: "-Xms2G -Xmx4G"
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xms2G -Xmx4G}
     networks:
       - debezium-network
     volumes:

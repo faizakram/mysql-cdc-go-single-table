@@ -1,0 +1,17 @@
+# Custom Kafka Connect image with the snake/camel/Pascal/UPPER naming SMT baked in (#132).
+#
+# Previously the shaded SMT jar had to be built locally and bind-mounted into the stock
+# debezium/connect image; the naming strategies silently failed if it was missing. This image
+# compiles the SMT and installs it onto the Connect plugin path, so every naming strategy works
+# out-of-the-box. Build context is the debezium-setup/ directory.
+
+# ---- Stage 1: build the SMT jar ----
+FROM maven:3.9-eclipse-temurin-21 AS smt
+WORKDIR /build
+COPY custom-smt/ ./
+RUN mvn -B -q clean package
+
+# ---- Stage 2: Connect runtime with the SMT installed ----
+FROM debezium/connect:2.5
+# /kafka/connect is on the Connect plugin path; each plugin lives in its own subdirectory.
+COPY --from=smt /build/target/snake-case-transform-*.jar /kafka/connect/custom-smt/

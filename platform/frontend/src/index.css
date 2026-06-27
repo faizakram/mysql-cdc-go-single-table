@@ -1,0 +1,169 @@
+/* Global design refinements for the migration console. Ant tokens (see theme.ts) carry color/shape;
+   this file adds depth, density, polish, and the responsive behavior Ant doesn't give for free.
+   Light/dark differences are driven by html[data-theme] + CSS variables. */
+
+:root {
+  --page-bg: #F6F7F9;
+  --card-border: #EBEDF2;
+  --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.03);
+  --card-shadow-hover: 0 4px 12px rgba(16, 24, 40, 0.07), 0 2px 6px rgba(16, 24, 40, 0.04);
+  --title-color: #1E2430;
+  --muted: #8A93A3;
+  --scroll-thumb: #CBD2DD;
+  --scroll-thumb-hover: #A9B2C2;
+}
+html[data-theme='dark'] {
+  --page-bg: #0B1120;
+  --card-border: rgba(255, 255, 255, 0.09);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --card-shadow-hover: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --title-color: #E5E9F0;
+  --muted: #7A8496;
+  --scroll-thumb: #2A3344;
+  --scroll-thumb-hover: #3A4558;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  font-family: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  background: var(--page-bg);
+}
+
+.ant-statistic-content, .ant-table-cell { font-variant-numeric: tabular-nums; }
+
+.ant-card {
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+.ant-card:hover { box-shadow: var(--card-shadow-hover); }
+
+.eyebrow {
+  text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 11px; font-weight: 600; color: var(--muted);
+}
+
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+
+/* Brand mark (sider + login). */
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; height: 60px; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 8px; flex: none;
+  background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+  display: grid; place-items: center; color: #fff;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.45);
+}
+.brand-name { color: #F8FAFC; font-weight: 600; font-size: 15px; letter-spacing: 0.2px; white-space: nowrap; }
+.brand-sub { color: rgba(148,163,184,0.8); font-size: 11px; }
+
+.app-title { font-weight: 600; color: var(--title-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Header: theme-aware surface + hairline divider (color comes from the Layout token; this just
+   adds the divider so it reads correctly in both light and dark). */
+.app-header { border-bottom: 1px solid var(--card-border); }
+
+/* Per-page header: breadcrumb + icon medallion + title + description. */
+.page-header { margin-bottom: 18px; }
+.page-header .ant-breadcrumb { font-size: 12px; margin-bottom: 8px; }
+.page-title-row { display: flex; align-items: center; gap: 14px; }
+.page-ico {
+  width: 44px; height: 44px; flex: none; border-radius: 12px; display: grid; place-items: center;
+  font-size: 20px; color: #6366F1;
+  background: linear-gradient(135deg, rgba(99,102,241,0.16), rgba(99,102,241,0.06));
+  border: 1px solid rgba(99,102,241,0.20);
+}
+
+/* Subtle page-in motion on route change. */
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: pageIn 0.26s ease both; }
+
+/* Severity stripe: a colored left rail on a stat card. */
+.stat-card { position: relative; overflow: hidden; }
+.stat-card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--stripe, #4F46E5);
+}
+
+.ant-table-wrapper { overflow-x: auto; }
+
+@media (max-width: 768px) {
+  .ant-drawer-right > .ant-drawer-content-wrapper,
+  .ant-drawer-left > .ant-drawer-content-wrapper {
+    width: 100vw !important; max-width: 100vw !important;
+  }
+  .app-content { margin: 12px !important; }
+}
+
+/* ---- World-class split sign-in ---------------------------------------------------------------- */
+.auth { min-height: 100vh; display: flex; }
+
+/* Left: branded panel — slate ground with a layered indigo/cyan mesh and a faint dot grid. */
+.auth-brand {
+  position: relative; flex: 1 1 52%; overflow: hidden;
+  padding: 56px clamp(40px, 5vw, 80px);
+  display: flex; flex-direction: column; justify-content: space-between;
+  color: #E5E9F2;
+  background:
+    radial-gradient(900px 600px at 18% 8%, rgba(99,102,241,0.40), transparent 60%),
+    radial-gradient(760px 520px at 95% 100%, rgba(13,148,200,0.30), transparent 55%),
+    linear-gradient(155deg, #0B1020 0%, #131A2E 60%, #0B1020 100%);
+}
+/* faint dot grid overlay */
+.auth-brand::before {
+  content: ''; position: absolute; inset: 0; opacity: 0.5; pointer-events: none;
+  background-image: radial-gradient(rgba(148,163,184,0.10) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(70% 70% at 30% 30%, #000 40%, transparent 100%);
+}
+.auth-brand > * { position: relative; z-index: 1; }
+.auth-logo { display: flex; align-items: center; gap: 12px; }
+.auth-logo .brand-mark { width: 40px; height: 40px; font-size: 20px; }
+.auth-logo-name { font-weight: 700; font-size: 18px; letter-spacing: 0.2px; color: #F8FAFC; }
+.auth-logo-sub { font-size: 12px; color: rgba(148,163,184,0.85); }
+.auth-headline {
+  font-size: clamp(28px, 3.4vw, 42px); line-height: 1.1; font-weight: 700; letter-spacing: -0.02em;
+  color: #FFFFFF; margin: 0 0 16px; text-wrap: balance; max-width: 16ch;
+}
+.auth-headline .accent { background: linear-gradient(90deg, #818CF8, #38BDF8);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.auth-tag { font-size: 15px; color: rgba(203,213,225,0.85); max-width: 46ch; margin: 0 0 28px; }
+.auth-features { display: flex; flex-direction: column; gap: 14px; }
+.auth-feature { display: flex; align-items: center; gap: 12px; font-size: 14px; color: #CBD5E1; }
+.auth-feature .ico {
+  width: 34px; height: 34px; flex: none; border-radius: 9px; display: grid; place-items: center;
+  color: #A5B4FC; background: rgba(129,140,248,0.14); border: 1px solid rgba(129,140,248,0.22);
+}
+.auth-foot { font-size: 12px; color: rgba(148,163,184,0.7); }
+.auth-brand, .auth-card { animation: authIn 0.5s ease both; }
+@keyframes authIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Right: the form panel. */
+.auth-form-side {
+  flex: 1 1 48%; display: grid; place-items: center; padding: 32px;
+  background: var(--page-bg);
+}
+.auth-card { width: 100%; max-width: 380px; }
+.auth-welcome { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--title-color); margin: 0 0 4px; }
+.auth-hint {
+  margin-top: 18px; font-size: 12.5px; text-align: center; color: var(--muted);
+  border-top: 1px solid var(--card-border); padding-top: 14px;
+}
+.auth-hint code { background: rgba(99,102,241,0.10); color: #6366F1; padding: 1px 6px; border-radius: 5px; }
+
+@media (max-width: 900px) {
+  .auth-brand { display: none; }
+  .auth-form-side { background:
+    radial-gradient(900px 500px at 50% -10%, rgba(99,102,241,0.10), transparent 60%), var(--page-bg); }
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

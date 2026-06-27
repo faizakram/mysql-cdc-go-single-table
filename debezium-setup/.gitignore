@@ -1,0 +1,36 @@
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Maven build artifacts
+custom-smt/target/
+
+# Environment configuration (contains sensitive data)
+.env
+
+# Generated connector files (auto-generated from .env; may contain inline secrets, #43)
+connectors/*.json
+# Connector secret files for file-provider mode (#43) — mounted from a secrets manager
+connect-secrets/
+*.secret.properties
+
+# Log files
+*.log
+*-log.txt
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

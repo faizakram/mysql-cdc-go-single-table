@@ -1,0 +1,161 @@
+# Full single-command stack: control plane (metadata-db + backend + frontend), the CDC data plane
+# (Zookeeper + Kafka + Debezium Connect) AND observability (Prometheus + Grafana + Loki + promtail),
+# all on one network — the user never starts anything separately.
+#
+#   docker compose -f platform/deploy/docker-compose.full.yml up -d --build      # start everything
+#   docker compose -f platform/deploy/docker-compose.full.yml down               # stop everything
+#
+# UIs:  app  http://localhost:8081 (admin/admin)    Grafana http://localhost:3001 (admin/admin)
+#       Prometheus http://localhost:9090            Connect REST http://localhost:8083
+#
+# Connect your OWN source/target databases: anything on your host (incl. the MS SQL test source) is
+# reachable as host=host.docker.internal. This file has NO bundled source/target DBs — you supply those.
+name: cdc-platform
+
+services:
+  # ---------------- CDC data plane ----------------
+  zookeeper:
+    image: debezium/zookeeper:2.5
+    restart: unless-stopped
+
+  kafka:
+    image: debezium/kafka:2.5
+    depends_on: [zookeeper]
+    environment:
+      ZOOKEEPER_CONNECT: zookeeper:2181
+    restart: unless-stopped
+
+  connect:
+    # Debezium Connect with the naming SMT baked in (#132); built from debezium-setup/Dockerfile.connect.
+    image: ${CONNECT_IMAGE:-ghcr.io/faizakram/connect-snakecase:2.5}
+    build:
+      context: ../../debezium-setup
+      dockerfile: Dockerfile.connect
+    depends_on: [kafka]
+    ports:
+      - "8083:8083"        # published for visibility/debugging; the backend uses it in-network
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: "1"
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      # Cut the ~5-min sink cold-start (#130).
+      CONNECT_SCHEDULED_REBALANCE_MAX_DELAY_MS: "0"
+      CONNECT_CONSUMER_METADATA_MAX_AGE_MS: "5000"
+    # So connector configs that reference host.docker.internal reach the user's source/target DBs.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # ---------------- Control plane ----------------
+  metadata-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: migration_platform
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"        # avoid clashing with a Postgres on the host's 5432
+    volumes:
+      - platform-metadata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build: ../backend
+    depends_on:
+      metadata-db:
+        condition: service_healthy
+      connect:
+        condition: service_started
+    environment:
+      SERVER_PORT: 8090
+      PLATFORM_METADATA_EMBEDDED: "false"
+      METADATA_DB_URL: jdbc:postgresql://metadata-db:5432/migration_platform
+      METADATA_DB_USER: postgres
+      METADATA_DB_PASSWORD: postgres
+      # In-network DNS — no host.docker.internal needed between backend and Connect.
+      KAFKA_CONNECT_URL: http://connect:8083
+      CORS_ALLOWED_ORIGINS: http://localhost:8081
+      PLATFORM_CRYPTO_KEY: ${PLATFORM_CRYPTO_KEY:-ZGV2LW9ubHktYWVzMjU2LWtleS1jaGFuZ2UtbWUhISE=}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-signing-secret-change-me-please-32b+}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+    # So the backend can also reach host databases directly (connection tests / schema discovery).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8090:8090"
+    restart: unless-stopped
+
+  frontend:
+    build: ../frontend
+    depends_on: [backend]
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+
+  # ---------------- Observability (#50/#51) ----------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../deploy/monitoring/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      - prom-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    # Host 3000 is often taken; expose on 3001.
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../../deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus]
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.1.1
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    volumes:
+      - ../../deploy/monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on: [loki]
+    restart: unless-stopped
+
+volumes:
+  platform-metadata:
+  prom-data:
+  grafana-data:
