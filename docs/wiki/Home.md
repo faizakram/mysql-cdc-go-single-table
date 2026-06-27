@@ -22,18 +22,8 @@ It wraps a Debezium + Kafka Connect data plane behind a Spring Boot REST API and
 
 ## Architecture at a glance
 
-```
-┌──────────────┐   REST    ┌───────────────────────┐   Connect REST   ┌──────────────────────────┐
-│  React UI    │ ────────▶ │  Spring Boot control  │ ───────────────▶ │  Kafka Connect (data     │
-│  (:8081)     │           │  plane (:8090)        │   (:8083)        │  plane): Debezium source │
-└──────────────┘           │  + metadata Postgres  │                  │  + JDBC sink + Kafka     │
-                           └───────────┬───────────┘                  └────────────┬─────────────┘
-                                       │ JDBC (schema discovery,                    │ CDC stream
-                                       │ validation, host.docker.internal)         ▼
-                          ┌────────────▼─────────────┐              ┌──────────────────────────┐
-                          │  Your SOURCE database    │ ──CDC log──▶ │  Your TARGET database    │
-                          └──────────────────────────┘              └──────────────────────────┘
-```
+<img width="1693" height="929" alt="image" src="https://github.com/user-attachments/assets/676e66e1-fce1-44b6-bb4b-12547e2c42c8" />
+
 
 The **control plane** never touches the data stream — it generates connector configs, deploys them to Kafka Connect, and observes health. The **data plane** (Debezium → Kafka → JDBC sink) does the actual replication. See **[Architecture](Architecture.md)** for the full picture.
 
