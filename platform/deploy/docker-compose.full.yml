@@ -1,13 +1,15 @@
-# Full single-command stack: control plane (metadata-db + backend + frontend) AND the CDC data
-# plane (Zookeeper + Kafka + Debezium Connect) on one network, so the user never has to start the
-# data plane separately.
+# Full single-command stack: control plane (metadata-db + backend + frontend), the CDC data plane
+# (Zookeeper + Kafka + Debezium Connect) AND observability (Prometheus + Grafana + Loki + promtail),
+# all on one network — the user never starts anything separately.
 #
 #   docker compose -f platform/deploy/docker-compose.full.yml up -d --build      # start everything
 #   docker compose -f platform/deploy/docker-compose.full.yml down               # stop everything
 #
-# Open the UI at http://localhost:8081 (admin / admin). Connect your OWN source/target databases:
-# anything running on your host (incl. the MS SQL test source) is reachable as host=host.docker.internal.
-# This file intentionally has NO bundled source/target DBs — you supply those.
+# UIs:  app  http://localhost:8081 (admin/admin)    Grafana http://localhost:3001 (admin/admin)
+#       Prometheus http://localhost:9090            Connect REST http://localhost:8083
+#
+# Connect your OWN source/target databases: anything on your host (incl. the MS SQL test source) is
+# reachable as host=host.docker.internal. This file has NO bundled source/target DBs — you supply those.
 name: cdc-platform
 
 services:
@@ -106,5 +108,54 @@ services:
       - "8081:80"
     restart: unless-stopped
 
+  # ---------------- Observability (#50/#51) ----------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../deploy/monitoring/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      - prom-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    # Host 3000 is often taken; expose on 3001.
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../../deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus]
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.1.1
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    volumes:
+      - ../../deploy/monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on: [loki]
+    restart: unless-stopped
+
 volumes:
   platform-metadata:
+  prom-data:
+  grafana-data:

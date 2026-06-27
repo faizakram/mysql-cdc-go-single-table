@@ -12,7 +12,7 @@ scrape_configs:
   - job_name: migration-platform
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ['platform-backend:8090']
+      - targets: ['backend:8090']
         labels: { component: control-plane }
 
   # Kafka Connect / Debezium JMX, exposed via the JMX exporter (see README to enable).
