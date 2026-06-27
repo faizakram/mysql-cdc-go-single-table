@@ -80,7 +80,9 @@ public class ValidationService {
                                           String schema, String table, MigrationConfig mc, boolean softDelete) {
         try {
             String tgtTable = mc.targetSchema() + "." + TargetNaming.apply(table, mc.namingStrategy());
-            String softFilter = softDelete ? " WHERE __cdc_deleted IS NOT TRUE" : "";
+            // The soft-delete marker is renamed by the naming strategy too (e.g. snake_case -> cdc_deleted).
+            String deleteMarker = TargetNaming.apply("__cdc_deleted", mc.namingStrategy());
+            String softFilter = softDelete ? " WHERE " + deleteMarker + " IS NOT TRUE" : "";
 
             long sourceRows = scalar(sc, "SELECT COUNT(*) FROM " + sourceQualify(srcEngine, schema, table));
             long targetRows = scalar(tc, "SELECT COUNT(*) FROM " + tgtTable + softFilter);
