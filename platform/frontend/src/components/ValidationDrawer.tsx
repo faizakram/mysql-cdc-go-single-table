@@ -1,16 +1,17 @@
 import {
   Drawer, Button, Table, Tag, Tooltip, App, Statistic, Row, Col, Empty, Typography,
-  Segmented, InputNumber, Space, Switch, Divider,
+  Segmented, InputNumber, Space, Switch, Divider, Tabs, Alert,
 } from 'antd';
-import { CheckCircleOutlined, SyncOutlined, DownloadOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, SyncOutlined, DownloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { reconciliationApi, projectsApi } from '../api/client';
-import type { Project, ReconciliationResult, ReconciliationRun } from '../api/types';
+import type { Project, ReconciliationResult, ReconciliationRun, TableValidation } from '../api/types';
 
 const RESULT_COLOR: Record<string, string> = {
   MATCH: 'green', MISMATCH: 'red', ERROR: 'orange', SKIPPED: 'default',
 };
+const num = (v: number) => (v > 0 ? <span style={{ color: '#cf1322' }}>{v.toLocaleString()}</span> : v.toLocaleString());
 
 export default function ValidationDrawer({ project, onClose }: { project: Project | null; onClose: () => void }) {
   const { message } = App.useApp();
@@ -19,6 +20,7 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
   const [mode, setMode] = useState<'COUNT' | 'CHECKSUM'>('COUNT');
   const [sampleSize, setSampleSize] = useState(1000);
   const [auto, setAuto] = useState(false);
+  const [view, setView] = useState('recon');
 
   useEffect(() => { setAuto(project?.config?.autoReconcile === true); }, [project]);
 
@@ -27,6 +29,24 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
     queryFn: () => reconciliationApi.history(project!.id),
     enabled: open,
   });
+
+  const integrity = useQuery({
+    queryKey: ['validation', project?.id],
+    queryFn: () => projectsApi.validation(project!.id),
+    enabled: open && view === 'integrity',
+  });
+
+  const downloadIntegrity = async () => {
+    try {
+      const blob = await projectsApi.validationReport(project!.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `validation-${project!.id}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      message.error(e?.response?.data?.message ?? 'Download failed');
+    }
+  };
 
   const run = useMutation({
     mutationFn: () => reconciliationApi.run(project!.id, mode, sampleSize),
@@ -95,19 +115,37 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
       open={open}
       onClose={onClose}
       extra={
-        <Space>
-          <Segmented value={mode} onChange={(v) => setMode(v as 'COUNT' | 'CHECKSUM')}
-            options={[{ label: 'Row counts', value: 'COUNT' }, { label: 'Checksum sample', value: 'CHECKSUM' }]} />
-          {mode === 'CHECKSUM' && (
-            <InputNumber min={10} max={100000} step={500} value={sampleSize}
-              onChange={(v) => setSampleSize(v ?? 1000)} addonBefore="sample" style={{ width: 160 }} />
-          )}
-          <Button type="primary" icon={<SyncOutlined />} loading={run.isPending} onClick={() => run.mutate()}>
-            Run validation
-          </Button>
-        </Space>
+        view === 'recon' ? (
+          <Space>
+            <Segmented value={mode} onChange={(v) => setMode(v as 'COUNT' | 'CHECKSUM')}
+              options={[{ label: 'Row counts', value: 'COUNT' }, { label: 'Checksum sample', value: 'CHECKSUM' }]} />
+            {mode === 'CHECKSUM' && (
+              <InputNumber min={10} max={100000} step={500} value={sampleSize}
+                onChange={(v) => setSampleSize(v ?? 1000)} addonBefore="sample" style={{ width: 160 }} />
+            )}
+            <Button type="primary" icon={<SyncOutlined />} loading={run.isPending} onClick={() => run.mutate()}>
+              Run validation
+            </Button>
+          </Space>
+        ) : (
+          <Space>
+            <Button icon={<DownloadOutlined />} disabled={!integrity.data?.results?.length}
+              onClick={downloadIntegrity}>Download CSV</Button>
+            <Button type="primary" icon={<SyncOutlined />} loading={integrity.isFetching}
+              onClick={() => integrity.refetch()}>Re-check integrity</Button>
+          </Space>
+        )
       }
     >
+      <Tabs
+        activeKey={view}
+        onChange={setView}
+        items={[
+          {
+            key: 'recon',
+            label: 'Reconciliation',
+            children: (
+              <>
       <Space style={{ marginBottom: 12 }}>
         <Switch checked={auto} loading={toggleAuto.isPending} onChange={(v) => toggleAuto.mutate(v)} />
         <Typography.Text>Scheduled validation (drift detection)</Typography.Text>
@@ -191,6 +229,65 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
           />
         </>
       )}
+              </>
+            ),
+          },
+          {
+            key: 'integrity',
+            label: <Space size={4}><SafetyCertificateOutlined />Integrity report</Space>,
+            children: (
+              <>
+                <Alert type="info" showIcon style={{ marginBottom: 12 }}
+                  message="Deep data-integrity checks on the target: null primary keys, duplicate keys, and rows missing from / extra in the target versus the source. Heavier than row counts — run after a full load completes."
+                />
+                {integrity.data && (
+                  <Row gutter={16} style={{ marginBottom: 16 }}>
+                    <Col span={6}><Statistic title="Tables" value={integrity.data.tables} /></Col>
+                    <Col span={6}>
+                      <Statistic title="Passed" value={integrity.data.passed}
+                        valueStyle={{ color: '#3f8600' }} prefix={<CheckCircleOutlined />} />
+                    </Col>
+                    <Col span={6}>
+                      <Statistic title="Failed" value={integrity.data.failed}
+                        valueStyle={{ color: integrity.data.failed > 0 ? '#cf1322' : undefined }} />
+                    </Col>
+                  </Row>
+                )}
+                {!integrity.data && !integrity.isFetching
+                  ? <Empty description="No integrity report yet. Click Re-check integrity." />
+                  : <Table<TableValidation>
+                      rowKey={(r) => `${r.schema}.${r.table}`}
+                      size="small"
+                      loading={integrity.isFetching}
+                      dataSource={integrity.data?.results}
+                      pagination={{ pageSize: 12, hideOnSinglePage: true }}
+                      expandable={{
+                        rowExpandable: (r) => r.issues?.length > 0,
+                        expandedRowRender: (r) => (
+                          <Space direction="vertical" size={2}>
+                            {r.issues.map((i, idx) => <Typography.Text key={idx} type="danger">• {i}</Typography.Text>)}
+                          </Space>
+                        ),
+                      }}
+                      columns={[
+                        { title: 'Table', render: (_: unknown, r: TableValidation) => `${r.schema}.${r.table}` },
+                        { title: 'Source', dataIndex: 'sourceRows', render: (v: number) => (v ?? 0).toLocaleString() },
+                        { title: 'Target', dataIndex: 'targetRows', render: (v: number) => (v ?? 0).toLocaleString() },
+                        { title: 'Null PK', dataIndex: 'nullPrimaryKey', render: num },
+                        { title: 'Dup keys', dataIndex: 'duplicateKeys', render: num },
+                        { title: 'Missing', dataIndex: 'missingRows', render: num },
+                        { title: 'Extra', dataIndex: 'extraRows', render: num },
+                        {
+                          title: 'Status', dataIndex: 'status',
+                          render: (s: string) => <Tag color={s === 'PASS' ? 'green' : s === 'FAIL' ? 'red' : 'default'}>{s}</Tag>,
+                        },
+                      ]}
+                    />}
+              </>
+            ),
+          },
+        ]}
+      />
     </Drawer>
   );
 }

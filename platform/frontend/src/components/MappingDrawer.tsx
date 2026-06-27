@@ -1,11 +1,14 @@
 import {
-  Drawer, Table, Select, Input, Alert, Button, Space, App, Tag, Typography, Tooltip,
+  Drawer, Table, Select, Input, Alert, Button, Space, App, Tag, Typography, Tooltip, Tabs,
 } from 'antd';
 import { KeyOutlined, SaveOutlined, WarningOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { schemaApi, projectsApi } from '../api/client';
-import type { ColumnMapping, Project } from '../api/types';
+import type { ColumnMapping, Project, Recommendation, ColumnProfile } from '../api/types';
+
+const CONF_COLOR: Record<string, string> = { HIGH: 'green', LOW: 'orange', MEDIUM: 'blue' };
+const PII_COLOR: Record<string, string> = { NONE: 'default', EMAIL: 'red', SSN: 'red', CREDIT_CARD: 'red', PHONE: 'volcano', NAME: 'gold' };
 
 const PG_TYPES = [
   'SMALLINT', 'INTEGER', 'BIGINT', 'NUMERIC', 'DOUBLE PRECISION', 'REAL', 'BOOLEAN',
@@ -38,6 +41,20 @@ export default function MappingDrawer({ project, onClose }: { project: Project |
     queryKey: ['type-mapping', connId, table],
     queryFn: () => schemaApi.typeMapping(connId!, schemaName, tableName, project!.id),
     enabled: open && !!connId && !!table,
+  });
+
+  const [tab, setTab] = useState('mapping');
+
+  const recs = useQuery({
+    queryKey: ['recommendations', project?.id],
+    queryFn: () => projectsApi.recommendations(project!.id),
+    enabled: open && !!project && tab === 'recommendations',
+  });
+
+  const profile = useQuery({
+    queryKey: ['profile', connId, table],
+    queryFn: () => schemaApi.profile(connId!, schemaName, tableName),
+    enabled: open && !!connId && !!table && tab === 'profile',
   });
 
   useEffect(() => {
@@ -141,10 +158,12 @@ export default function MappingDrawer({ project, onClose }: { project: Project |
       open={open}
       onClose={onClose}
       extra={
-        <Button type="primary" icon={<SaveOutlined />}
-          disabled={!table} loading={save.isPending} onClick={() => save.mutate()}>
-          Save mapping
-        </Button>
+        tab === 'mapping' ? (
+          <Button type="primary" icon={<SaveOutlined />}
+            disabled={!table} loading={save.isPending} onClick={() => save.mutate()}>
+            Save mapping
+          </Button>
+        ) : null
       }
     >
       <datalist id="pgtypes">{PG_TYPES.map((t) => <option key={t} value={t} />)}</datalist>
@@ -163,16 +182,94 @@ export default function MappingDrawer({ project, onClose }: { project: Project |
               options={tables.map((t) => ({ value: t, label: t }))}
             />
           </Space>
-          <Alert type="info" showIcon style={{ marginBottom: 12 }}
-            message="UUID/JSON designations feed the type-conversion transform (snake_cased) and apply on the next run. Target-type overrides are saved for the schema-DDL path."
-          />
-          <Table<ColumnMapping>
-            rowKey="column"
-            size="small"
-            loading={mapping.isLoading}
-            dataSource={mapping.data}
-            columns={columns}
-            pagination={false}
+
+          <Tabs
+            activeKey={tab}
+            onChange={setTab}
+            items={[
+              {
+                key: 'mapping',
+                label: 'Type mapping',
+                children: (
+                  <>
+                    <Alert type="info" showIcon style={{ marginBottom: 12 }}
+                      message="UUID/JSON designations feed the type-conversion transform (snake_cased) and apply on the next run. Target-type overrides are saved for the schema-DDL path."
+                    />
+                    <Table<ColumnMapping>
+                      rowKey="column"
+                      size="small"
+                      loading={mapping.isLoading}
+                      dataSource={mapping.data}
+                      columns={columns}
+                      pagination={false}
+                    />
+                  </>
+                ),
+              },
+              {
+                key: 'recommendations',
+                label: 'Recommendations',
+                children: (
+                  <>
+                    <Alert type="info" showIcon style={{ marginBottom: 12 }}
+                      message="Type-mapping advice across all selected tables. High-confidence suggestions are safe to apply via the override above; review LOW-confidence ones."
+                    />
+                    <Table<Recommendation>
+                      rowKey={(r) => `${r.table}.${r.column}`}
+                      size="small"
+                      loading={recs.isLoading}
+                      dataSource={recs.data}
+                      pagination={{ pageSize: 12, hideOnSinglePage: true }}
+                      columns={[
+                        { title: 'Table', dataIndex: 'table', render: (v: string) => <Typography.Text type="secondary">{v}</Typography.Text> },
+                        { title: 'Column', dataIndex: 'column' },
+                        { title: 'Source', dataIndex: 'sourceType', render: (t: string) => <Tag>{t}</Tag> },
+                        { title: 'Recommended', dataIndex: 'recommended', render: (t: string) => <Tag color="geekblue">{t}</Tag> },
+                        { title: 'Why', dataIndex: 'rationale' },
+                        {
+                          title: 'Confidence', dataIndex: 'confidence',
+                          render: (c: string) => <Tag color={CONF_COLOR[c] ?? 'default'}>{c}</Tag>,
+                        },
+                      ]}
+                    />
+                  </>
+                ),
+              },
+              {
+                key: 'profile',
+                label: 'Profile & PII',
+                children: (
+                  <>
+                    <Alert type="info" showIcon style={{ marginBottom: 12 }}
+                      message={`Sampled column statistics${profile.data ? ` — ~${profile.data.rows.toLocaleString()} rows` : ''}. PII tags flag columns that may need masking or extra handling.`}
+                    />
+                    <Table<ColumnProfile>
+                      rowKey="column"
+                      size="small"
+                      loading={profile.isLoading}
+                      dataSource={profile.data?.columns}
+                      pagination={false}
+                      columns={[
+                        {
+                          title: 'Column', dataIndex: 'column',
+                          render: (n: string, c: ColumnProfile) => (
+                            <Space>{n}{c.pii && c.pii !== 'NONE' && <Tag color={PII_COLOR[c.pii] ?? 'red'}>{c.pii}</Tag>}</Space>
+                          ),
+                        },
+                        { title: 'Type', dataIndex: 'type', render: (t: string) => <Tag>{t}</Tag> },
+                        {
+                          title: 'Null %', dataIndex: 'nullPct',
+                          render: (p: number) => `${(p ?? 0).toFixed(1)}%`,
+                        },
+                        { title: 'Distinct', dataIndex: 'distinct', render: (v: number) => (v ?? 0).toLocaleString() },
+                        { title: 'Min', dataIndex: 'min', render: (v: string | null) => v ?? <Typography.Text type="secondary">—</Typography.Text> },
+                        { title: 'Max', dataIndex: 'max', render: (v: string | null) => v ?? <Typography.Text type="secondary">—</Typography.Text> },
+                      ]}
+                    />
+                  </>
+                ),
+              },
+            ]}
           />
         </>
       )}

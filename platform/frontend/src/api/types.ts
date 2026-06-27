@@ -293,3 +293,22 @@ export interface CostEstimate {
   rows: number; bytes: number; durationSeconds: number;
   computeUsd: number; storageUsdPerMonth: number; totalFirstMonthUsd: number; assumptions: string[];
 }
+
+export interface TableValidation {
+  schema: string; table: string; sourceRows: number; targetRows: number;
+  nullPrimaryKey: number; duplicateKeys: number; missingRows: number; extraRows: number;
+  status: string; issues: string[];
+}
+export interface ValidationReport { tables: number; passed: number; failed: number; results: TableValidation[]; }
+
+export interface Recommendation {
+  table: string; column: string; sourceType: string; recommended: string; rationale: string; confidence: string;
+}
+
+export interface PluginInfo { id: string; kind: string; version: string; detail: string; }
+
+export interface ColumnProfile {
+  column: string; type: string; nulls: number; nullPct: number; distinct: number;
+  min: string | null; max: string | null; pii: string;
+}
+export interface TableProfile { schema: string; table: string; rows: number; columns: ColumnProfile[]; }

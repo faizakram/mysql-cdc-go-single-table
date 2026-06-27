@@ -6,6 +6,7 @@ import type {
   ReconciliationRun, LoginResponse, MeResponse, UserAdmin, RoleName, AlertItem, ConstraintApplyResult,
   Schedule, ScheduleRequest, OrchestratorStatus, AuditPage, EngineSpec, CdcReadiness,
   MigrationPlan, SchemaObjectInventory, DryRunReport, CostEstimate,
+  ValidationReport, Recommendation, PluginInfo, TableProfile,
 } from './types';
 
 const http = axios.create({ baseURL: '/api/v1' });
@@ -97,6 +98,10 @@ export const schemaApi = {
     http.get<ColumnMapping[]>(`/connections/${connectionId}/schema/type-mapping`, {
       params: projectId ? { schema, table, projectId } : { schema, table },
     }).then((r) => r.data),
+  profile: (connectionId: string, schema: string, table: string) =>
+    http.get<TableProfile>(`/connections/${connectionId}/profile`, {
+      params: { schema, table },
+    }).then((r) => r.data),
   constraintsDdl: (projectId: string) =>
     http.get<string[]>(`/projects/${projectId}/schema/constraints/ddl`).then((r) => r.data),
   applyConstraints: (projectId: string) =>
@@ -112,6 +117,18 @@ export const projectsApi = {
   plan: (id: string) => http.get<MigrationPlan>(`/projects/${id}/plan`).then((r) => r.data),
   dryRun: (id: string) => http.post<DryRunReport>(`/projects/${id}/dry-run`).then((r) => r.data),
   costEstimate: (id: string) => http.get<CostEstimate>(`/projects/${id}/cost-estimate`).then((r) => r.data),
+  validation: (id: string) => http.get<ValidationReport>(`/projects/${id}/validation`).then((r) => r.data),
+  validationReport: (id: string) =>
+    http.get(`/projects/${id}/validation/report.csv`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  recommendations: (id: string) => http.get<Recommendation[]>(`/projects/${id}/recommendations`).then((r) => r.data),
+};
+
+export const pluginsApi = {
+  list: () => http.get<PluginInfo[]>('/plugins').then((r) => r.data),
+};
+
+export const intelligenceApi = {
+  remediation: (error: string) => http.post<{ hint: string }>('/remediation', { error }).then((r) => r.data),
 };
 
 export const jobsApi = {

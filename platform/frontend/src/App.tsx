@@ -7,6 +7,7 @@ import Connections from './pages/Connections';
 import Alerts from './pages/Alerts';
 import Users from './pages/Users';
 import Audit from './pages/Audit';
+import Plugins from './pages/Plugins';
 import Login from './pages/Login';
 import { useAuth } from './auth/AuthContext';
 
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/users" element={user.role === 'ADMIN' ? <Users /> : <Navigate to="/" replace />} />
         <Route path="/audit" element={user.role === 'ADMIN' ? <Audit /> : <Navigate to="/" replace />} />
+        <Route path="/plugins" element={user.role === 'ADMIN' ? <Plugins /> : <Navigate to="/" replace />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
       </Routes>
     </AppLayout>

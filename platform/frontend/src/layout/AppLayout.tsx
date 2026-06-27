@@ -5,7 +5,7 @@ import {
 import {
   DashboardOutlined, DatabaseOutlined, ProjectOutlined, UserOutlined, LogoutOutlined, TeamOutlined,
   BellOutlined, AreaChartOutlined, AuditOutlined, MenuOutlined, DeploymentUnitOutlined,
-  MoonOutlined, SunOutlined, ColumnHeightOutlined,
+  MoonOutlined, SunOutlined, ColumnHeightOutlined, ApiOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -24,6 +24,7 @@ const PAGE_META: Record<string, { title: string; desc: string; icon: ReactNode }
   '/alerts': { title: 'Alerts', desc: 'Connector failures and lag breaches', icon: <BellOutlined /> },
   '/users': { title: 'Users', desc: 'Accounts and role-based access', icon: <TeamOutlined /> },
   '/audit': { title: 'Audit log', desc: 'Who did what — control & config actions', icon: <AuditOutlined /> },
+  '/plugins': { title: 'Plugins', desc: 'Engines & dialects loaded via the SPI', icon: <ApiOutlined /> },
 };
 
 function Brand({ subtitle }: { subtitle?: boolean }) {
@@ -61,6 +62,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     ...(user?.role === 'ADMIN' ? [
       { key: '/users', icon: <TeamOutlined />, label: 'Users' },
       { key: '/audit', icon: <AuditOutlined />, label: 'Audit log' },
+      { key: '/plugins', icon: <ApiOutlined />, label: 'Plugins' },
     ] : []),
     { key: 'grafana', icon: <AreaChartOutlined />, label: 'Grafana ↗' },
   ];

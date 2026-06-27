@@ -1,9 +1,30 @@
 import { Drawer, Typography, Tag, Empty, Alert, Divider, Table } from 'antd';
+import { BulbOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { monitoringApi, alertsApi } from '../api/client';
+import { monitoringApi, alertsApi, intelligenceApi } from '../api/client';
 import type { AlertItem, Project } from '../api/types';
 
 const SEV: Record<string, string> = { INFO: 'blue', WARNING: 'gold', CRITICAL: 'red' };
+
+/** Maps a raw connector stack trace to an actionable fix suggestion (#111). */
+function RemediationHint({ trace }: { trace: string }) {
+  const q = useQuery({
+    queryKey: ['remediation', trace.slice(0, 200)],
+    queryFn: () => intelligenceApi.remediation(trace),
+    staleTime: Infinity,
+  });
+  if (!q.data?.hint) return null;
+  return (
+    <Alert
+      type="info"
+      showIcon
+      icon={<BulbOutlined />}
+      style={{ marginTop: 6 }}
+      message="Suggested fix"
+      description={q.data.hint}
+    />
+  );
+}
 
 /**
  * Errors & connector diagnostics for a project (issue #40): surfaces FAILED task stack traces from
@@ -39,6 +60,7 @@ export default function ErrorsDrawer({ project, onClose }: { project: Project | 
             <div key={i} style={{ marginBottom: 12 }}>
               <Tag color="red">{t.who}</Tag>
               <pre style={{ maxHeight: 220, overflow: 'auto', background: '#fff1f0', padding: 10, fontSize: 12 }}>{t.trace}</pre>
+              <RemediationHint trace={t.trace} />
             </div>
           ))}
 
