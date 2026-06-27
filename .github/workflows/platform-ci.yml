@@ -5,12 +5,16 @@ on:
   push:
     branches: [ main, develop ]
     paths:
-      - 'platform/**'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deploy/**'
       - '.github/workflows/platform-ci.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'platform/**'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deploy/**'
       - '.github/workflows/platform-ci.yml'
 
 jobs:
@@ -27,7 +31,7 @@ jobs:
           cache: maven
       # `verify` runs surefire (unit) + failsafe (*IT). Testcontainers uses the runner's Docker.
       - name: Build, unit & integration tests
-        working-directory: platform/backend
+        working-directory: backend
         run: mvn -B clean verify
 
   frontend:
@@ -40,26 +44,26 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: platform/frontend/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
-        working-directory: platform/frontend
+        working-directory: frontend
         run: npm ci
       - name: Type-check & build
-        working-directory: platform/frontend
+        working-directory: frontend
         run: npm run build
       - name: Unit tests (Vitest)
-        working-directory: platform/frontend
+        working-directory: frontend
         run: npm test
       - name: Install Playwright browser
-        working-directory: platform/frontend
+        working-directory: frontend
         run: npx playwright install --with-deps chromium
       - name: E2E smoke (Playwright)
-        working-directory: platform/frontend
+        working-directory: frontend
         run: npm run test:e2e
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: platform/frontend/playwright-report/
+          path: frontend/playwright-report/
           retention-days: 7

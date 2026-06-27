@@ -1,39 +1,33 @@
-# Binaries
-mysql-cdc
-*.exe
-*.dll
-*.so
-*.dylib
-
-# Test binary
-*.test
-
-# Output of the go coverage tool
-*.out
-
-# Environment files
-.env
-
-# IDE
+# OS / IDE
+.DS_Store
+Thumbs.db
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
+# Env / logs
+.env
 *.log
 
-# Docker volumes
+# Java / Maven
+target/
+*.class
+
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+.vite/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Docker volumes / local data
 data/
-
-# Temporary files
-/tmp/
-debezium-setup/custom-smt/target/*
-
-# Progress tracking files
-*_progress.json

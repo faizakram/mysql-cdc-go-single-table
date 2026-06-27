@@ -78,4 +78,4 @@ jobs:
           format: table
           # Skip vendored/build artifacts so we scan source + dependency manifests, not bundled
           # third-party wheels or compiled jars.
-          skip-dirs: debezium-setup/venv,platform/frontend/node_modules,platform/backend/target,debezium-setup/custom-smt/target
+          skip-dirs: frontend/node_modules,backend/target,debezium-setup/custom-smt/target

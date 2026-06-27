@@ -5,9 +5,9 @@ Plan, configure, run and validate migrations between heterogeneous databases —
 PostgreSQL, MySQL, Oracle, Db2 and MongoDB — from a single console, with live monitoring and
 end-to-end validation.
 
-- **Control plane** (`platform/backend`) — Java 21 + Spring Boot 3 REST API: connections, projects,
+- **Control plane** (`backend`) — Java 21 + Spring Boot 3 REST API: connections, projects,
   job lifecycle, schema discovery, type mapping, validation, planning, auth/RBAC, metrics.
-- **UI** (`platform/frontend`) — React 18 + TypeScript + Vite + Ant Design.
+- **UI** (`frontend`) — React 18 + TypeScript + Vite + Ant Design.
 - **Data plane** (`debezium-setup/`) — Debezium 2.5 + Kafka Connect (source connectors + JDBC sink)
   with a custom naming/type-conversion SMT baked into the Connect image.
 - **Observability** — Prometheus + Grafana + Loki/promtail.
@@ -15,7 +15,7 @@ end-to-end validation.
 ## Quick start (one command)
 
 ```bash
-docker compose -f platform/deploy/docker-compose.full.yml up -d --build
+docker compose -f deploy/docker-compose.full.yml up -d --build
 ```
 
 Brings up the whole stack — metadata DB, backend, frontend, Zookeeper, Kafka, Connect, and the
@@ -36,7 +36,7 @@ CDC enabled) is available under [`debezium-setup/test-data/`](debezium-setup/tes
 Stop everything with:
 
 ```bash
-docker compose -f platform/deploy/docker-compose.full.yml down
+docker compose -f deploy/docker-compose.full.yml down
 ```
 
 ## Documentation
@@ -48,9 +48,9 @@ project **[Wiki](../../wiki)**.
 
 | Path | Purpose |
 |------|---------|
-| `platform/backend` | Spring Boot control-plane API |
-| `platform/frontend` | React UI |
-| `platform/deploy` | Compose stacks (`docker-compose.full.yml` is the single-command stack) |
-| `platform/docs` | ADRs and design notes |
+| `backend` | Spring Boot control-plane API |
+| `frontend` | React UI |
+| `deploy` | Compose stacks (`docker-compose.full.yml` is the single-command stack), k8s, monitoring, sql |
+| `docs` | ADRs, design notes, architecture review |
 | `debezium-setup` | CDC data plane: Connect image, custom SMT, test data |
 | `deploy/monitoring` | Prometheus / Grafana / Loki configuration |
