@@ -2,3 +2,9 @@ node_modules/
 dist/
 *.local
 .vite/
+
+# Test artifacts
+coverage/
+playwright-report/
+test-results/
+.playwright/
