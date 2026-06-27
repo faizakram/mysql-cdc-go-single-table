@@ -22,11 +22,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -45,6 +48,8 @@ public class ValidationService {
 
     private static final Logger log = LoggerFactory.getLogger(ValidationService.class);
     private static final int MISSING_SAMPLE = 1000;
+    /** Max sampled keys bound per target IN-query — keeps under engine parameter limits while batching. */
+    private static final int KEY_CHUNK = 500;
 
     private final ProjectRepository projects;
     private final ConnectionRepository connections;
@@ -290,24 +295,43 @@ public class ValidationService {
         }
     }
 
-    /** Bounded missing-row check: sample source keys, count how many are absent on the target. */
+    /**
+     * Bounded missing-row check: sample source primary keys, count how many are absent on the target.
+     *
+     * <p>Set-based (#151): instead of one {@code COUNT(*)} per sampled key (up to {@value #MISSING_SAMPLE}
+     * round-trips per table — the dominant cost at scale), the sampled keys are matched in a handful of
+     * chunked {@code IN (...)} queries. Key comparison keeps the original normalization
+     * ({@code lower(cast(pk AS text))} on both sides) so results are identical to the per-key loop.
+     */
     private long missingSample(Connection sc, Connection tc, DbType srcEngine, String schema, String table,
                                String pk, String tgtTable, String tgtPk) {
         try {
-            List<String> keys = new ArrayList<>();
+            // Sample distinct source keys (PKs are unique, but dedupe defensively).
+            Set<String> keys = new LinkedHashSet<>();
             String topN = srcEngine == DbType.SQLSERVER ? "TOP (" + MISSING_SAMPLE + ") " : "";
             String limit = srcEngine == DbType.SQLSERVER ? "" : " LIMIT " + MISSING_SAMPLE;
             String q = "SELECT " + topN + pkRef(srcEngine, pk) + " FROM " + sourceQualify(srcEngine, schema, table) + limit;
             try (Statement st = sc.createStatement(); ResultSet rs = st.executeQuery(q)) {
                 while (rs.next()) { Object v = rs.getObject(1); if (v != null) keys.add(v.toString()); }
             }
-            long miss = 0;
-            for (String k : keys) {
-                long found = scalar(tc, "SELECT COUNT(*) FROM " + tgtTable
-                        + " WHERE lower(cast(" + tgtPk + " AS text)) = lower('" + k.replace("'", "''") + "')");
-                if (found == 0) miss++;
+            if (keys.isEmpty()) return 0;
+
+            // Count, per chunk, how many sampled keys are present on the target; missing = sampled - present.
+            long present = 0;
+            List<String> sample = new ArrayList<>(keys);
+            for (int from = 0; from < sample.size(); from += KEY_CHUNK) {
+                List<String> chunk = sample.subList(from, Math.min(from + KEY_CHUNK, sample.size()));
+                String placeholders = String.join(",", java.util.Collections.nCopies(chunk.size(), "lower(?)"));
+                String sql = "SELECT COUNT(DISTINCT lower(cast(" + tgtPk + " AS text))) FROM " + tgtTable
+                        + " WHERE lower(cast(" + tgtPk + " AS text)) IN (" + placeholders + ")";
+                try (PreparedStatement ps = tc.prepareStatement(sql)) {
+                    for (int i = 0; i < chunk.size(); i++) ps.setString(i + 1, chunk.get(i));
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) present += rs.getLong(1);
+                    }
+                }
             }
-            return miss;
+            return Math.max(0, sample.size() - present);
         } catch (Exception e) {
             return 0;   // best-effort; non-fatal
         }
