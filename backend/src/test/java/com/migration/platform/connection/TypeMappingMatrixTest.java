@@ -41,22 +41,36 @@ class TypeMappingMatrixTest {
     }
 
     @Test
-    void driverTypeModifiersDoNotMakeCommonTypesUnmappable() {
-        // SQL Server's JDBC driver reports IDENTITY columns as "int identity" / "bigint identity";
-        // these must map cleanly (no false "unmappable" note that warned on every table).
-        TypeMappingMatrix.Mapped idInt = TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "int identity", 0);
-        assertThat(idInt.targetType()).isEqualTo("INTEGER");
-        assertThat(idInt.note()).isNull();
-
-        TypeMappingMatrix.Mapped idBig = TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "bigint identity", 0);
-        assertThat(idBig.targetType()).isEqualTo("BIGINT");
-        assertThat(idBig.note()).isNull();
-
-        // MySQL appends " unsigned" / " zerofill" — also base types, not unmappable.
+    void modifiersAndPrecisionAreNormalized() {
+        // IDENTITY / unsigned / zerofill modifiers stripped -> base type maps cleanly.
+        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "int identity", 0).targetType())
+                .isEqualTo("INTEGER");
+        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "bigint identity", 0).note()).isNull();
         assertThat(TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "int unsigned", 0).note()).isNull();
+        // Precision/length parens stripped -> still categorizes (NUMBER(10,2) -> NUMERIC, datetime2(7) ok).
+        assertThat(TypeMappingMatrix.map(DbType.ORACLE, DbType.POSTGRESQL, "NUMBER(10,2)", 0).targetType())
+                .isEqualTo("NUMERIC");
+        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "datetime2(7)", 0).note()).isNull();
+    }
 
-        // A genuinely unsupported type is still flagged (e.g. SQL Server geography).
-        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "geography", 0).note())
-                .contains("No canonical mapping");
+    @Test
+    void exoticTypesAutoBindWithoutWarning() {
+        // SQL Server CLR/special types auto-bind to sensible targets — no "review" warning.
+        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "timestamp", 0).targetType())
+                .isEqualTo("BYTEA"); // rowversion
+        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "geography", 0).note()).isNull();
+        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "hierarchyid", 0).note()).isNull();
+        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "sql_variant", 0).note()).isNull();
+        // Postgres / MySQL specials too.
+        assertThat(TypeMappingMatrix.map(DbType.POSTGRESQL, DbType.MYSQL, "inet", 0).note()).isNull();
+        assertThat(TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "geometry", 0).note()).isNull();
+    }
+
+    @Test
+    void trulyUnknownTypeStillAutoBindsButIsFlagged() {
+        // Safety net: an unrecognized type binds to a safe default and is flagged so it can be reviewed.
+        TypeMappingMatrix.Mapped m = TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "some_custom_udt", 0);
+        assertThat(m.targetType()).isEqualTo("TEXT");
+        assertThat(m.note()).contains("No canonical mapping");
     }
 }

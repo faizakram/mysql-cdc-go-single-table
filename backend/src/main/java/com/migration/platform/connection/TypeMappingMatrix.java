@@ -23,10 +23,12 @@ public final class TypeMappingMatrix {
     /** Map a source column type to the target engine's type. */
     public static Mapped map(DbType source, DbType target, String sourceType, int size) {
         String src = sourceType == null ? "" : sourceType.trim().toLowerCase();
-        // Strip storage/auto-increment modifiers that JDBC drivers append to the type name, so the
-        // base type still categorizes cleanly: SQL Server reports IDENTITY columns as "int identity"
-        // / "bigint identity"; MySQL appends " unsigned" / " zerofill".
-        src = src.replace(" identity", "").replace(" unsigned", "").replace(" zerofill", "").trim();
+        // Normalize so the base type categorizes cleanly regardless of how a driver decorates it:
+        //  - drop precision/length parens: numeric(10,2) -> numeric, timestamp(6) -> timestamp
+        //  - drop storage/auto-increment modifiers: "int identity" (SQL Server), "int unsigned" (MySQL)
+        src = src.replaceAll("\\s*\\([^)]*\\)", "")
+                 .replace(" identity", "").replace(" unsigned", "").replace(" zerofill", "")
+                 .trim();
         if (source == target) {
             // Homogeneous fast-path: keep the source type verbatim (preserving size where given).
             return new Mapped(sized(sourceType == null ? "TEXT" : sourceType.toUpperCase(), size, src), null);
@@ -61,8 +63,13 @@ public final class TypeMappingMatrix {
                 case "time" -> Cat.TIME;
                 case "datetime", "datetime2", "smalldatetime" -> Cat.TIMESTAMP;
                 case "datetimeoffset" -> Cat.TIMESTAMPTZ;
-                case "binary", "varbinary", "image" -> Cat.BINARY;
+                // rowversion (a.k.a. timestamp) is an 8-byte auto-version value, not a datetime.
+                case "binary", "varbinary", "image", "rowversion", "timestamp" -> Cat.BINARY;
                 case "uniqueidentifier" -> Cat.UUID;
+                // CLR / special types: spatial as WKB binary, hierarchyid as its path string, variant as text.
+                case "geography", "geometry" -> Cat.BINARY;
+                case "hierarchyid" -> Cat.VARCHAR;
+                case "sql_variant" -> Cat.TEXT;
                 default -> Cat.UNKNOWN;
             };
             case MYSQL -> switch (t) {
@@ -81,6 +88,9 @@ public final class TypeMappingMatrix {
                 case "datetime", "timestamp" -> Cat.TIMESTAMP;
                 case "blob", "tinyblob", "mediumblob", "longblob", "binary", "varbinary" -> Cat.BINARY;
                 case "json" -> Cat.JSON;
+                // Spatial types -> WKB binary.
+                case "geometry", "point", "linestring", "polygon",
+                     "multipoint", "multilinestring", "multipolygon", "geometrycollection" -> Cat.BINARY;
                 default -> Cat.UNKNOWN;
             };
             case POSTGRESQL -> switch (t) {
@@ -101,6 +111,14 @@ public final class TypeMappingMatrix {
                 case "bytea" -> Cat.BINARY;
                 case "uuid" -> Cat.UUID;
                 case "json", "jsonb" -> Cat.JSON;
+                case "timetz", "time with time zone" -> Cat.TIME;
+                case "xml" -> Cat.TEXT;
+                case "hstore" -> Cat.JSON;
+                case "geometry", "geography" -> Cat.BINARY;
+                // String-renderable specials: network addresses, bit strings, interval, full-text, name.
+                case "inet", "cidr", "macaddr", "macaddr8",
+                     "bit", "varbit", "bit varying",
+                     "interval", "tsvector", "tsquery", "name", "citext" -> Cat.VARCHAR;
                 default -> Cat.UNKNOWN;
             };
             case ORACLE -> switch (t) {
@@ -112,7 +130,10 @@ public final class TypeMappingMatrix {
                 case "clob", "nclob", "long" -> Cat.TEXT;
                 case "date", "timestamp" -> Cat.TIMESTAMP;
                 case "timestamp with time zone", "timestamp with local time zone" -> Cat.TIMESTAMPTZ;
-                case "raw", "blob", "bfile" -> Cat.BINARY;
+                case "raw", "long raw", "blob", "bfile" -> Cat.BINARY;
+                case "rowid", "urowid" -> Cat.VARCHAR;
+                case "xmltype" -> Cat.TEXT;
+                case "interval year to month", "interval day to second" -> Cat.VARCHAR;
                 default -> Cat.UNKNOWN;
             };
             case DB2 -> switch (t) {
@@ -128,7 +149,8 @@ public final class TypeMappingMatrix {
                 case "date" -> Cat.DATE;
                 case "time" -> Cat.TIME;
                 case "timestamp" -> Cat.TIMESTAMP;
-                case "blob", "binary", "varbinary" -> Cat.BINARY;
+                case "blob", "binary", "varbinary", "rowid" -> Cat.BINARY;
+                case "xml" -> Cat.TEXT;
                 default -> Cat.UNKNOWN;
             };
             // MongoDB BSON types (#100): scalars map directly; documents/arrays become JSON on the target.
