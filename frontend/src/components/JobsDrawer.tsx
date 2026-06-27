@@ -1,5 +1,5 @@
 import {
-  Drawer, Button, Table, Tag, Space, App, Modal, Typography, Empty, Tooltip,
+  Drawer, Button, Table, Tag, Space, App, Modal, Typography, Empty, Tooltip, Checkbox,
 } from 'antd';
 import {
   PlayCircleOutlined, PauseOutlined, StepForwardOutlined, StopOutlined,
@@ -88,16 +88,35 @@ export default function JobsDrawer({ project, onClose }: { project: Project | nu
   const pause = act(jobsApi.pause, 'Paused');
   const resume = act(jobsApi.resume, 'Resumed');
   const stop = act(jobsApi.stop, 'Stopped');
-  const reload = act(jobsApi.reload, 'Full reload started — re-snapshotting');
-
-  const confirmReload = (id: string) => modal.confirm({
-    title: 'Re-run full load?',
-    okText: 'Re-run full load',
-    okButtonProps: { danger: true },
-    content: 'Resets the source connector offsets so the snapshot runs again from scratch and the '
-      + 'target is fully re-synced (rows are re-applied as upserts). Requires Kafka Connect 3.6+.',
-    onOk: () => reload.mutate(id),
+  const reload = useMutation({
+    mutationFn: ({ id, cleanTarget }: { id: string; cleanTarget: boolean }) => jobsApi.reload(id, cleanTarget),
+    onSuccess: () => { message.success('Full reload started — re-snapshotting'); invalidate(); },
+    onError: onErr,
   });
+
+  const confirmReload = (id: string) => {
+    let cleanTarget = false;
+    modal.confirm({
+      title: 'Re-run full load?',
+      okText: 'Re-run full load',
+      okButtonProps: { danger: true },
+      width: 520,
+      content: (
+        <div>
+          <Typography.Paragraph>
+            Resets the source connector offsets so the snapshot runs again from scratch and the target
+            is re-synced (rows are re-applied as upserts). Requires Kafka Connect 3.6+.
+          </Typography.Paragraph>
+          <Checkbox onChange={(e) => { cleanTarget = e.target.checked; }}>
+            <b>Clean target first</b> — truncate all target tables before re-snapshot. Removes rows that
+            were deleted on the source since the last load. <Typography.Text type="danger">Deletes all
+            current target rows for this project.</Typography.Text>
+          </Checkbox>
+        </div>
+      ),
+      onOk: () => reload.mutate({ id, cleanTarget }),
+    });
+  };
 
   const showPreview = async () => {
     try { setPreview(await jobsApi.preview(project!.id)); }

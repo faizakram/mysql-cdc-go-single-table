@@ -58,6 +58,61 @@ public class TargetSchemaService {
         }
     }
 
+    /**
+     * Truncate the given target tables so a subsequent re-snapshot reconciles the target exactly to
+     * the source (#163) — removing rows that no longer exist on the source, which an upsert-only
+     * reload cannot. {@code tableNames} are the target-side simple names (already naming-applied);
+     * they are schema-qualified and quoted per engine here. Returns the number of tables truncated.
+     */
+    public int truncateTables(DbConnection target, String schema, java.util.List<String> tableNames) {
+        if (tableNames == null || tableNames.isEmpty()) return 0;
+        DbType t = target.getDbType();
+        java.util.List<String> qualified = qualifiedNames(t, schema, tableNames);
+        try (Connection c = jdbc.open(target, crypto.decrypt(target.getPasswordEnc()))) {
+            switch (t) {
+                case POSTGRESQL -> exec(c, "TRUNCATE " + String.join(", ", qualified) + " RESTART IDENTITY CASCADE");
+                case MYSQL -> {
+                    exec(c, "SET FOREIGN_KEY_CHECKS = 0");
+                    try { for (String q : qualified) exec(c, "TRUNCATE TABLE " + q); }
+                    finally { exec(c, "SET FOREIGN_KEY_CHECKS = 1"); }
+                }
+                default -> {
+                    // SQL Server / Oracle / Db2: no multi-table truncate; TRUNCATE fails on FK-referenced
+                    // tables, so fall back to DELETE per table.
+                    for (String q : qualified) {
+                        try { exec(c, "TRUNCATE TABLE " + q); }
+                        catch (Exception e) { exec(c, "DELETE FROM " + q); }
+                    }
+                }
+            }
+            log.info("Cleaned {} target table(s) in schema '{}' on {} before reload", qualified.size(), schema, t);
+            return qualified.size();
+        } catch (Exception e) {
+            throw new IllegalStateException("Could not clean target tables before reload: " + e.getMessage(), e);
+        }
+    }
+
+    private void exec(Connection c, String sql) throws Exception {
+        try (Statement st = c.createStatement()) { st.execute(sql); }
+    }
+
+    /** Schema-qualify + quote each target table name per engine (MySQL has no separate schema). */
+    static java.util.List<String> qualifiedNames(DbType t, String schema, java.util.List<String> tableNames) {
+        boolean schemaQualified = t != DbType.MYSQL;
+        return tableNames.stream()
+                .map(n -> (schemaQualified ? quote(t, schema) + "." : "") + quoteId(t, n))
+                .toList();
+    }
+
+    /** Quote a table identifier per engine (brackets for SQL Server, backticks for MySQL, else double-quotes). */
+    static String quoteId(DbType t, String id) {
+        return switch (t) {
+            case SQLSERVER -> "[" + id.replace("]", "]]") + "]";
+            case MYSQL -> "`" + id.replace("`", "``") + "`";
+            default -> "\"" + id.replace("\"", "\"\"") + "\"";
+        };
+    }
+
     private boolean managed(DbType t) {
         return t == DbType.POSTGRESQL || t == DbType.SQLSERVER || t == DbType.DB2;
     }

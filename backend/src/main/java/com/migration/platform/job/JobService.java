@@ -187,6 +187,15 @@ public class JobService {
      */
     @Transactional
     public JobResponse reloadFull(UUID id) {
+        return reloadFull(id, false);
+    }
+
+    /**
+     * Re-run the full load. When {@code cleanTarget} is true, the project's target tables are first
+     * truncated so the re-snapshot reconciles the target exactly to the source — removing rows that
+     * no longer exist on the source, which an upsert-only reload cannot (#163).
+     */
+    public JobResponse reloadFull(UUID id, boolean cleanTarget) {
         MigrationJob job = find(id);
         if (job.getSourceConnectorName() == null
                 || !EnumSet.of(JobStatus.RUNNING, JobStatus.SNAPSHOT, JobStatus.PAUSED).contains(job.getStatus())) {
@@ -195,6 +204,19 @@ public class JobService {
         }
         MigrationProject project = requireProject(job.getProjectId());
         String source = job.getSourceConnectorName();
+
+        if (cleanTarget) {
+            // Truncate the target tables before re-snapshot so deleted/phantom rows don't survive.
+            DbConnection tgt = requireConnection(project.getTargetConnectionId(), "target");
+            var mc = com.migration.platform.connector.MigrationConfig.from(project.getConfig(), project.getName());
+            List<String> targetTables = selectedTables(project).stream()
+                    .map(fq -> { String[] p = fq.split("\\.", 2); return p.length == 2 ? p[1] : p[0]; })
+                    .map(name -> com.migration.platform.connector.TargetNaming.apply(name, mc.namingStrategy()))
+                    .toList();
+            int cleaned = targetSchema.truncateTables(tgt, mc.targetSchema(), targetTables);
+            audit.record("JOB_CLEAN_TARGET", job.getProjectId().toString(),
+                    java.util.Map.of("jobId", id.toString(), "tables", cleaned));
+        }
         try {
             connect.stop(source);          // → STOPPED (required before clearing offsets)
             resetOffsetsWithRetry(source); // clear committed offsets (Connect 3.6+)

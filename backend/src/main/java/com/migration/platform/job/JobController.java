@@ -67,9 +67,14 @@ public class JobController {
         return service.stop(id);
     }
 
-    /** Re-run a clean full load: reset source offsets so Debezium re-snapshots (#131). */
+    /**
+     * Re-run a full load: reset source offsets so Debezium re-snapshots (#131). When
+     * {@code cleanTarget=true}, truncate the target tables first so the re-snapshot fully reconciles
+     * the target to the source (removes rows deleted on the source since the last load) (#163).
+     */
     @PostMapping("/jobs/{id}/reload")
-    public JobResponse reload(@PathVariable UUID id) {
-        return service.reloadFull(id);
+    public JobResponse reload(@PathVariable UUID id,
+                              @RequestParam(defaultValue = "false") boolean cleanTarget) {
+        return service.reloadFull(id, cleanTarget);
     }
 }

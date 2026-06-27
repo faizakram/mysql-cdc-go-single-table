@@ -24,4 +24,16 @@ class TargetSchemaServiceTest {
         assertThat(TargetSchemaService.quote(DbType.POSTGRESQL, "a\"b")).isEqualTo("\"a\"\"b\"");
         assertThat(TargetSchemaService.quote(DbType.SQLSERVER, "a]b")).isEqualTo("[a]]b]");
     }
+
+    @Test
+    void qualifiesTargetTableNamesPerEngine() {
+        // PostgreSQL / SQL Server: schema-qualified + quoted; case preserved (PascalCase survives).
+        assertThat(TargetSchemaService.qualifiedNames(DbType.POSTGRESQL, "offer", java.util.List.of("OrderItems", "Payments")))
+                .containsExactly("\"offer\".\"OrderItems\"", "\"offer\".\"Payments\"");
+        assertThat(TargetSchemaService.qualifiedNames(DbType.SQLSERVER, "offer", java.util.List.of("OrderItems")))
+                .containsExactly("[offer].[OrderItems]");
+        // MySQL has no separate schema — table name only, backtick-quoted.
+        assertThat(TargetSchemaService.qualifiedNames(DbType.MYSQL, "ignored", java.util.List.of("order_items")))
+                .containsExactly("`order_items`");
+    }
 }
