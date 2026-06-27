@@ -117,6 +117,11 @@ public class JobService {
             connect.createConnector(source);
             connect.createConnector(sink);
 
+            // Re-deliver to the target on every (re)start so a changed target schema / naming strategy is
+            // fully repopulated, instead of being silently skipped because the sink's Kafka consumer group
+            // resumed past already-consumed records. Idempotent — the JDBC sink upserts by primary key.
+            resetSinkOffsets(configService.sinkName(project));
+
             job.setSourceConnectorName(configService.sourceName(project));
             job.setSinkConnectorName(configService.sinkName(project));
             job.setStatus(JobStatus.SNAPSHOT);
@@ -194,6 +199,8 @@ public class JobService {
             connect.stop(source);          // → STOPPED (required before clearing offsets)
             resetOffsetsWithRetry(source); // clear committed offsets (Connect 3.6+)
             connect.resume(source);        // resume → re-snapshot from scratch
+            // Also rewind the sink so the re-snapshot lands fully in the (possibly changed) target.
+            if (job.getSinkConnectorName() != null) resetSinkOffsets(job.getSinkConnectorName());
         } catch (Exception e) {
             throw new IllegalStateException(
                     "Could not reset source offsets; Kafka Connect must support the offsets API (3.6+): "
@@ -216,6 +223,21 @@ public class JobService {
             catch (RuntimeException e) { last = e; Thread.sleep(500); }
         }
         if (last != null) throw last;
+    }
+
+    /**
+     * Best-effort reset of a sink connector's consumer-group offsets (stop → clear → resume) so it
+     * re-reads its topics from the start. Ensures a changed target schema / naming strategy is fully
+     * re-delivered rather than skipped. Non-fatal: a reset failure must not block the run.
+     */
+    private void resetSinkOffsets(String sinkConnector) {
+        try {
+            connect.stop(sinkConnector);
+            resetOffsetsWithRetry(sinkConnector);
+            connect.resume(sinkConnector);
+        } catch (Exception e) {
+            log.warn("Could not reset sink offsets for {} (continuing): {}", sinkConnector, e.getMessage());
+        }
     }
 
     /** (Re)seed per-table status rows to PENDING for a fresh run (#19, #129). */
