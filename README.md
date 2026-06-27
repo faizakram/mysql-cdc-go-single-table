@@ -42,7 +42,7 @@ docker compose -f deploy/docker-compose.full.yml down
 ## Documentation
 
 Full developer onboarding, run guide, architecture, API reference and operations docs live in the
-project **[Wiki](../../wiki)**.
+project **[Wiki](../../wiki)**, with a version-controlled copy under [`docs/wiki/`](docs/wiki/).
 
 ## Repository layout
 
