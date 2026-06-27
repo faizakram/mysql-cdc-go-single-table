@@ -23,6 +23,10 @@ public final class TypeMappingMatrix {
     /** Map a source column type to the target engine's type. */
     public static Mapped map(DbType source, DbType target, String sourceType, int size) {
         String src = sourceType == null ? "" : sourceType.trim().toLowerCase();
+        // Strip storage/auto-increment modifiers that JDBC drivers append to the type name, so the
+        // base type still categorizes cleanly: SQL Server reports IDENTITY columns as "int identity"
+        // / "bigint identity"; MySQL appends " unsigned" / " zerofill".
+        src = src.replace(" identity", "").replace(" unsigned", "").replace(" zerofill", "").trim();
         if (source == target) {
             // Homogeneous fast-path: keep the source type verbatim (preserving size where given).
             return new Mapped(sized(sourceType == null ? "TEXT" : sourceType.toUpperCase(), size, src), null);
