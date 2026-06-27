@@ -1,6 +1,8 @@
 package com.migration.platform.validation.dto;
 
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 
 /** Advanced validation read models (#96). */
 public final class ValidationDtos {
@@ -19,6 +21,19 @@ public final class ValidationDtos {
 
     public record ValidationReport(
             int tables, int passed, int failed,
+            List<TableValidation> results
+    ) {}
+
+    /**
+     * A background validation run (#150) with the per-table results computed so far. Drives the
+     * UI's live progress: {@code completedTables}/{@code totalTables} and the running pass/fail
+     * tally update as the run streams in.
+     */
+    public record ValidationRunDto(
+            UUID id, UUID projectId, String status,
+            int totalTables, int completedTables, int passed, int failed,
+            String error,
+            OffsetDateTime startedAt, OffsetDateTime finishedAt,
             List<TableValidation> results
     ) {}
 }
