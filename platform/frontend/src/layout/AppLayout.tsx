@@ -17,13 +17,13 @@ import { alertsApi } from '../api/client';
 const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
 
-const PAGE_TITLE: Record<string, string> = {
-  '/': 'Dashboard',
-  '/projects': 'Projects',
-  '/connections': 'Connections',
-  '/alerts': 'Alerts',
-  '/users': 'Users',
-  '/audit': 'Audit log',
+const PAGE_META: Record<string, { title: string; desc: string; icon: ReactNode }> = {
+  '/': { title: 'Dashboard', desc: 'Live pipeline health, lag and the job queue', icon: <DashboardOutlined /> },
+  '/projects': { title: 'Projects', desc: 'Plan, configure and run migrations', icon: <ProjectOutlined /> },
+  '/connections': { title: 'Connections', desc: 'Source and target databases', icon: <DatabaseOutlined /> },
+  '/alerts': { title: 'Alerts', desc: 'Connector failures and lag breaches', icon: <BellOutlined /> },
+  '/users': { title: 'Users', desc: 'Accounts and role-based access', icon: <TeamOutlined /> },
+  '/audit': { title: 'Audit log', desc: 'Who did what — control & config actions', icon: <AuditOutlined /> },
 };
 
 function Brand({ subtitle }: { subtitle?: boolean }) {
@@ -65,7 +65,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     { key: 'grafana', icon: <AreaChartOutlined />, label: 'Grafana ↗' },
   ];
   const selected = items.find((i) => i.key !== '/' && location.pathname.startsWith(i.key))?.key ?? '/';
-  const pageTitle = PAGE_TITLE[selected] ?? 'Dashboard';
+  const meta = PAGE_META[selected] ?? PAGE_META['/'];
 
   const onMenuClick = (key: string) => {
     setDrawerOpen(false);
@@ -154,8 +154,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </Header>
         <Content className="app-content" style={{ margin: 24 }}>
           <div className="page-header">
-            <Breadcrumb items={[{ title: 'CDC Console' }, { title: pageTitle }]} />
-            <Typography.Title level={3} style={{ margin: '4px 0 0' }}>{pageTitle}</Typography.Title>
+            <Breadcrumb items={[{ title: 'CDC Console' }, { title: meta.title }]} />
+            <div className="page-title-row">
+              <span className="page-ico">{meta.icon}</span>
+              <div>
+                <Typography.Title level={3} style={{ margin: 0, lineHeight: 1.15 }}>{meta.title}</Typography.Title>
+                <Typography.Text type="secondary">{meta.desc}</Typography.Text>
+              </div>
+            </div>
           </div>
           <div key={location.pathname} className="page-enter">{children}</div>
         </Content>

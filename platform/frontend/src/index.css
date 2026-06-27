@@ -69,9 +69,16 @@ body {
    adds the divider so it reads correctly in both light and dark). */
 .app-header { border-bottom: 1px solid var(--card-border); }
 
-/* Per-page header: breadcrumb + title. */
-.page-header { margin-bottom: 16px; }
-.page-header .ant-breadcrumb { font-size: 12px; }
+/* Per-page header: breadcrumb + icon medallion + title + description. */
+.page-header { margin-bottom: 18px; }
+.page-header .ant-breadcrumb { font-size: 12px; margin-bottom: 8px; }
+.page-title-row { display: flex; align-items: center; gap: 14px; }
+.page-ico {
+  width: 44px; height: 44px; flex: none; border-radius: 12px; display: grid; place-items: center;
+  font-size: 20px; color: #6366F1;
+  background: linear-gradient(135deg, rgba(99,102,241,0.16), rgba(99,102,241,0.06));
+  border: 1px solid rgba(99,102,241,0.20);
+}
 
 /* Subtle page-in motion on route change. */
 @keyframes pageIn {
@@ -97,17 +104,66 @@ body {
   .app-content { margin: 12px !important; }
 }
 
-/* Login backdrop: a calm, technical gradient field (works in both themes). */
-.login-shell {
-  min-height: 100vh; display: grid; place-items: center; padding: 24px;
+/* ---- World-class split sign-in ---------------------------------------------------------------- */
+.auth { min-height: 100vh; display: flex; }
+
+/* Left: branded panel — slate ground with a layered indigo/cyan mesh and a faint dot grid. */
+.auth-brand {
+  position: relative; flex: 1 1 52%; overflow: hidden;
+  padding: 56px clamp(40px, 5vw, 80px);
+  display: flex; flex-direction: column; justify-content: space-between;
+  color: #E5E9F2;
   background:
-    radial-gradient(1100px 600px at 12% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
-    radial-gradient(900px 500px at 110% 110%, rgba(14, 165, 233, 0.12), transparent 55%),
-    #0B1020;
+    radial-gradient(900px 600px at 18% 8%, rgba(99,102,241,0.40), transparent 60%),
+    radial-gradient(760px 520px at 95% 100%, rgba(13,148,200,0.30), transparent 55%),
+    linear-gradient(155deg, #0B1020 0%, #131A2E 60%, #0B1020 100%);
 }
-.login-card {
-  width: 100%; max-width: 400px; background: #fff; color: #1E2430;
-  border-radius: 16px; padding: 32px 28px; box-shadow: 0 24px 60px rgba(2, 6, 23, 0.45);
+/* faint dot grid overlay */
+.auth-brand::before {
+  content: ''; position: absolute; inset: 0; opacity: 0.5; pointer-events: none;
+  background-image: radial-gradient(rgba(148,163,184,0.10) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(70% 70% at 30% 30%, #000 40%, transparent 100%);
+}
+.auth-brand > * { position: relative; z-index: 1; }
+.auth-logo { display: flex; align-items: center; gap: 12px; }
+.auth-logo .brand-mark { width: 40px; height: 40px; font-size: 20px; }
+.auth-logo-name { font-weight: 700; font-size: 18px; letter-spacing: 0.2px; color: #F8FAFC; }
+.auth-logo-sub { font-size: 12px; color: rgba(148,163,184,0.85); }
+.auth-headline {
+  font-size: clamp(28px, 3.4vw, 42px); line-height: 1.1; font-weight: 700; letter-spacing: -0.02em;
+  color: #FFFFFF; margin: 0 0 16px; text-wrap: balance; max-width: 16ch;
+}
+.auth-headline .accent { background: linear-gradient(90deg, #818CF8, #38BDF8);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.auth-tag { font-size: 15px; color: rgba(203,213,225,0.85); max-width: 46ch; margin: 0 0 28px; }
+.auth-features { display: flex; flex-direction: column; gap: 14px; }
+.auth-feature { display: flex; align-items: center; gap: 12px; font-size: 14px; color: #CBD5E1; }
+.auth-feature .ico {
+  width: 34px; height: 34px; flex: none; border-radius: 9px; display: grid; place-items: center;
+  color: #A5B4FC; background: rgba(129,140,248,0.14); border: 1px solid rgba(129,140,248,0.22);
+}
+.auth-foot { font-size: 12px; color: rgba(148,163,184,0.7); }
+.auth-brand, .auth-card { animation: authIn 0.5s ease both; }
+@keyframes authIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Right: the form panel. */
+.auth-form-side {
+  flex: 1 1 48%; display: grid; place-items: center; padding: 32px;
+  background: var(--page-bg);
+}
+.auth-card { width: 100%; max-width: 380px; }
+.auth-welcome { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--title-color); margin: 0 0 4px; }
+.auth-hint {
+  margin-top: 18px; font-size: 12.5px; text-align: center; color: var(--muted);
+  border-top: 1px solid var(--card-border); padding-top: 14px;
+}
+.auth-hint code { background: rgba(99,102,241,0.10); color: #6366F1; padding: 1px 6px; border-radius: 5px; }
+
+@media (max-width: 900px) {
+  .auth-brand { display: none; }
+  .auth-form-side { background:
+    radial-gradient(900px 500px at 50% -10%, rgba(99,102,241,0.10), transparent 60%), var(--page-bg); }
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
