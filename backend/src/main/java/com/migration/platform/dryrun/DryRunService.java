@@ -1,7 +1,11 @@
 package com.migration.platform.dryrun;
 
+import com.migration.platform.connection.ConnectionRepository;
 import com.migration.platform.connection.ConnectionService;
+import com.migration.platform.connection.DbConnection;
+import com.migration.platform.connection.TargetSchemaService;
 import com.migration.platform.connection.dto.TestResult;
+import com.migration.platform.connector.MigrationConfig;
 import com.migration.platform.planning.MigrationPlanService;
 import com.migration.platform.planning.dto.PlanDtos.MigrationPlan;
 import com.migration.platform.planning.dto.PlanDtos.PlanTable;
@@ -24,11 +28,17 @@ public class DryRunService {
 
     private final ProjectRepository projects;
     private final ConnectionService connections;
+    private final ConnectionRepository connectionRepo;
+    private final TargetSchemaService targetSchema;
     private final MigrationPlanService planner;
 
-    public DryRunService(ProjectRepository projects, ConnectionService connections, MigrationPlanService planner) {
+    public DryRunService(ProjectRepository projects, ConnectionService connections,
+                         ConnectionRepository connectionRepo, TargetSchemaService targetSchema,
+                         MigrationPlanService planner) {
         this.projects = projects;
         this.connections = connections;
+        this.connectionRepo = connectionRepo;
+        this.targetSchema = targetSchema;
         this.planner = planner;
     }
 
@@ -50,6 +60,16 @@ public class DryRunService {
 
         TestResult src = safeTest(p.getSourceConnectionId(), "source", blockers);
         TestResult tgt = safeTest(p.getTargetConnectionId(), "target", blockers);
+
+        // Target schema must exist for the JDBC sink to create tables; the job auto-creates it on
+        // start, so this is an informational heads-up rather than a blocker.
+        if (tgt != null && tgt.success() && p.getTargetConnectionId() != null) {
+            DbConnection tgtConn = connectionRepo.findById(p.getTargetConnectionId()).orElse(null);
+            String schema = MigrationConfig.from(p.getConfig(), p.getName()).targetSchema();
+            if (tgtConn != null && !targetSchema.exists(tgtConn, schema)) {
+                warnings.add("Target schema '" + schema + "' does not exist — it will be created automatically when the job starts.");
+            }
+        }
 
         MigrationPlan plan = null;
         if (src != null && src.success() && tgt != null && tgt.success()) {

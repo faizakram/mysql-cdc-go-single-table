@@ -40,10 +40,12 @@ public class JobService {
     private final CryptoService crypto;
     private final TableStatusRepository tableStatus;
     private final com.migration.platform.audit.AuditService audit;
+    private final com.migration.platform.connection.TargetSchemaService targetSchema;
 
     public JobService(JobRepository repo, ProjectRepository projects, ConnectionRepository connections,
                       KafkaConnectClient connect, ConnectorConfigService configService, CryptoService crypto,
-                      TableStatusRepository tableStatus, com.migration.platform.audit.AuditService audit) {
+                      TableStatusRepository tableStatus, com.migration.platform.audit.AuditService audit,
+                      com.migration.platform.connection.TargetSchemaService targetSchema) {
         this.repo = repo;
         this.projects = projects;
         this.connections = connections;
@@ -52,6 +54,7 @@ public class JobService {
         this.crypto = crypto;
         this.tableStatus = tableStatus;
         this.audit = audit;
+        this.targetSchema = targetSchema;
     }
 
     @Transactional(readOnly = true)
@@ -104,6 +107,12 @@ public class JobService {
 
             Map<String, Object> source = configService.sourceConnector(project, src, crypto.decrypt(src.getPasswordEnc()));
             Map<String, Object> sink = configService.sinkConnector(project, tgt, crypto.decrypt(tgt.getPasswordEnc()), src.getDbType());
+
+            // The JDBC sink creates target tables but not the schema — ensure it exists first so the
+            // sink doesn't fail silently when the configured target schema is missing (#).
+            String tgtSchema = com.migration.platform.connector.MigrationConfig
+                    .from(project.getConfig(), project.getName()).targetSchema();
+            targetSchema.ensure(tgt, tgtSchema);
 
             connect.createConnector(source);
             connect.createConnector(sink);
