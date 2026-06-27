@@ -1,0 +1,58 @@
+name: Sync Wiki
+
+# Keeps the GitHub Wiki in sync with the version-controlled copy in docs/wiki/.
+# docs/wiki/ is the single source of truth (reviewed via PRs); this job publishes it to the wiki
+# on every push to main that touches docs/wiki/. Transforms applied during publish:
+#   - strip the ".md" suffix from internal links (wiki page URLs have no extension)
+#   - drop README.md (repo-only folder index; the wiki uses Home.md + _Sidebar.md)
+#   - _Sidebar.md and Home.md are published as-is (wiki navigation + landing page)
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docs/wiki/**'
+      - '.github/workflows/wiki-sync.yml'
+  workflow_dispatch: {}   # allow manual runs
+
+permissions:
+  contents: write          # required to push to the <repo>.wiki.git
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Clone wiki
+        run: |
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki
+
+      - name: Render docs/wiki -> wiki
+        run: |
+          set -euo pipefail
+          # Clear existing wiki pages (keep .git), then regenerate from the source of truth.
+          find wiki -maxdepth 1 -type f -name '*.md' -delete
+          for f in docs/wiki/*.md; do
+            b="$(basename "$f")"
+            [ "$b" = "README.md" ] && continue          # repo-only index, not a wiki page
+            # Strip ".md" from internal page links:  ](Page.md) -> ](Page) ; ](Page.md#x) -> ](Page#x)
+            sed -E 's/\]\(([A-Za-z0-9_-]+)\.md(#[^)]*)?\)/](\1\2)/g' "$f" > "wiki/$b"
+          done
+
+      - name: Commit & push
+        run: |
+          cd wiki
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki already up to date."
+          else
+            git commit -m "docs: sync wiki from docs/wiki @ ${{ github.sha }}"
+            git push
+          fi

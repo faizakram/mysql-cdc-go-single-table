@@ -1,6 +1,6 @@
 # Documentation
 
-A version-controlled copy of the project **[Wiki](../../../../wiki)**. The wiki is the primary, browsable home for these docs; this folder is the backup that travels with the code and is reviewed via PRs.
+The **source of truth** for the project **[Wiki](../../../../wiki)**. Edit the docs here (reviewed via PRs); on merge to `main`, the [`Sync Wiki`](../../.github/workflows/wiki-sync.yml) workflow republishes them to the live wiki automatically — so both locations stay in sync. The live wiki is the browsable home; this folder travels with the code.
 
 ## Contents
 
@@ -25,4 +25,4 @@ A version-controlled copy of the project **[Wiki](../../../../wiki)**. The wiki 
 **Project**
 - [Roadmap](Roadmap.md) — delivered & planned
 
-> Keep this copy and the wiki in sync when you change either. The design notes and ADRs in the parent [`docs/`](../) folder remain the authoritative source for deep-dive topics.
+> Edit pages **here**, not in the wiki UI — wiki edits would be overwritten on the next sync. The design notes and ADRs in the parent [`docs/`](../) folder remain the authoritative source for deep-dive topics.
