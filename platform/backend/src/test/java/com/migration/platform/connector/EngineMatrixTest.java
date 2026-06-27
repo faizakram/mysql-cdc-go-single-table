@@ -59,7 +59,7 @@ class EngineMatrixTest {
         Map<String, Object> srcCfg = (Map<String, Object>) svc.sourceConnector(
                 p, conn(source, 1234, "srcdb"), "pw").get("config");
         Map<String, Object> sinkCfg = (Map<String, Object>) svc.sinkConnector(
-                p, conn(target, 5678, "tgtdb"), "pw", "srcdb").get("config");
+                p, conn(target, 5678, "tgtdb"), "pw", source).get("config");
 
         assertThat(srcCfg).containsEntry("connector.class", expectedConnector);
         assertThat(sinkCfg).containsEntry("connector.class", "io.debezium.connector.jdbc.JdbcSinkConnector");

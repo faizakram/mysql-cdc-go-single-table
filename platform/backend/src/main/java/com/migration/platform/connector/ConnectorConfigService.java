@@ -50,7 +50,7 @@ public class ConnectorConfigService {
     }
 
     public Map<String, Object> sinkConnector(MigrationProject p, DbConnection tgt, String tgtPassword,
-                                             String sourceDbName) {
+                                             DbType sourceEngine) {
         MigrationConfig mc = MigrationConfig.from(p.getConfig(), p.getName());
         boolean hard = mc.deleteStrategy() == DeleteStrategy.HARD;
         String prefix = mc.topicPrefix();
@@ -74,7 +74,11 @@ public class ConnectorConfigService {
         cfg.put("transforms.route.type", "org.apache.kafka.connect.transforms.RegexRouter");
         cfg.put("transforms.route.regex", routeRegex);
         cfg.put("transforms.route.replacement", "$1");
-        cfg.put("transforms.unwrap.type", "io.debezium.transforms.ExtractNewRecordState");
+        // MongoDB emits a document envelope and needs the Mongo-specific unwrap SMT; relational
+        // engines use ExtractNewRecordState (#100 cross-DB test finding).
+        cfg.put("transforms.unwrap.type", sourceEngine == DbType.MONGODB
+                ? "io.debezium.connector.mongodb.transforms.ExtractNewDocumentState"
+                : "io.debezium.transforms.ExtractNewRecordState");
 
         if (hard) {
             cfg.put("transforms.unwrap.drop.tombstones", "false");
