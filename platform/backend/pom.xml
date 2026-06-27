@@ -137,6 +137,13 @@
             <artifactId>kafka-clients</artifactId>
         </dependency>
 
+        <!-- MongoDB native driver: test-connection + schema discovery for Mongo sources (#124),
+             which are not reachable over JDBC. Version managed by spring-boot-dependencies. -->
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+        </dependency>
+
         <!-- Structured JSON logging (#50): emits one JSON object per log line for Loki/ELK
              ingestion. Active only under the "json" Spring profile; plain console otherwise. -->
         <dependency>

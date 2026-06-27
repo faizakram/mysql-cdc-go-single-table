@@ -22,15 +22,21 @@ public class SchemaDiscoveryService {
     private final ConnectionRepository repo;
     private final CryptoService crypto;
     private final JdbcSupport jdbc;
+    private final MongoSupport mongo;
 
-    public SchemaDiscoveryService(ConnectionRepository repo, CryptoService crypto, JdbcSupport jdbc) {
+    public SchemaDiscoveryService(ConnectionRepository repo, CryptoService crypto, JdbcSupport jdbc,
+                                  MongoSupport mongo) {
         this.repo = repo;
         this.crypto = crypto;
         this.jdbc = jdbc;
+        this.mongo = mongo;
     }
 
     public List<TableInfo> listTables(UUID connectionId, String schemaFilter) {
         DbConnection c = find(connectionId);
+        if (c.getDbType() == DbType.MONGODB) {   // collections, via the native driver (#124)
+            return mongo.listCollections(c, crypto.decrypt(c.getPasswordEnc()));
+        }
         String schema = effectiveSchema(c, schemaFilter);
         try (Connection conn = open(c)) {
             String catalog = conn.getCatalog();
@@ -55,6 +61,9 @@ public class SchemaDiscoveryService {
 
     public List<ColumnInfo> listColumns(UUID connectionId, String schema, String table) {
         DbConnection c = find(connectionId);
+        if (c.getDbType() == DbType.MONGODB) {   // infer fields from a sample document (#124)
+            return mongo.sampleColumns(c, crypto.decrypt(c.getPasswordEnc()), table);
+        }
         try (Connection conn = open(c)) {
             String catalog = conn.getCatalog();
             DatabaseMetaData md = conn.getMetaData();
