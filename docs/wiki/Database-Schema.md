@@ -4,17 +4,8 @@ The control plane persists all state in a PostgreSQL **metadata store** (embedde
 
 ## Entity-relationship overview
 
-```
-db_connection ──(source/target)──┐
-                                 ▼
-                          migration_project ──┬──< migration_job ──< table_status
-                                              ├──< reconciliation_run ──< reconciliation_result
-                                              ├──< alert            (ON DELETE SET NULL)
-                                              └──< job_schedule
+<img width="900" height="500" alt="image" src="https://github.com/user-attachments/assets/72aee4b8-86aa-4fcb-a7a3-7811ecf4b2ee" />
 
-app_user   (standalone — auth/RBAC)
-audit_log  (standalone — immutable action trail)
-```
 
 Deleting a project cascades to its jobs (and their `table_status`), reconciliation runs (and results), and schedules. Alerts keep history via `ON DELETE SET NULL`.
 
