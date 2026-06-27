@@ -22,8 +22,12 @@ public class MongoSourceStrategy implements SourceConnectorStrategy {
         cfg.put("mongodb.connection.string",
                 ctx.optStr("connectionString",
                         "mongodb://" + ctx.src().getHost() + ":" + ctx.src().getPort()));
-        cfg.put("mongodb.user", ctx.src().getUsername());
-        cfg.put("mongodb.password", ctx.passwordRef());
+        // Auth is optional (#121): omit credentials when the connection has authEnabled=false
+        // (e.g. a dev MongoDB with no auth), otherwise SCRAM auth would fail.
+        if (ctx.optBool("authEnabled", true)) {
+            cfg.put("mongodb.user", ctx.src().getUsername());
+            cfg.put("mongodb.password", ctx.passwordRef());
+        }
         cfg.put("database.include.list", ctx.src().getDatabaseName());
         cfg.put("collection.include.list", ctx.mc().tableIncludeList());
         cfg.put("capture.mode", ctx.optStr("captureMode", "change_streams_update_full"));

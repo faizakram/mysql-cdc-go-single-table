@@ -89,7 +89,7 @@ public class JobService {
         String maskedTgt = "******";
         return Map.of(
                 "source", configService.sourceConnector(project, src, maskedSrc),
-                "sink", configService.sinkConnector(project, tgt, maskedTgt, src.getDatabaseName()));
+                "sink", configService.sinkConnector(project, tgt, maskedTgt, src.getDbType()));
     }
 
     @Transactional
@@ -102,7 +102,7 @@ public class JobService {
             DbConnection tgt = requireConnection(project.getTargetConnectionId(), "target");
 
             Map<String, Object> source = configService.sourceConnector(project, src, crypto.decrypt(src.getPasswordEnc()));
-            Map<String, Object> sink = configService.sinkConnector(project, tgt, crypto.decrypt(tgt.getPasswordEnc()), src.getDatabaseName());
+            Map<String, Object> sink = configService.sinkConnector(project, tgt, crypto.decrypt(tgt.getPasswordEnc()), src.getDbType());
 
             connect.createConnector(source);
             connect.createConnector(sink);

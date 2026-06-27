@@ -96,7 +96,7 @@ class ConnectorConfigServiceTest {
         // Homogeneous MySQL -> MySQL: sink URL is MySQL and routing stays generic.
         MigrationProject p = project(new HashMap<>());
         Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(
-                p, conn(DbType.MYSQL, "mysqltgt", 3306, "warehouse", "app"), "pw", "shop").get("config");
+                p, conn(DbType.MYSQL, "mysqltgt", 3306, "warehouse", "app"), "pw", DbType.MYSQL).get("config");
         assertThat(sink.get("connection.url").toString()).startsWith("jdbc:mysql://mysqltgt:3306/warehouse");
         // MySQL has no separate schema → table.name.format is unqualified.
         assertThat(sink).containsEntry("table.name.format", "${topic}");
@@ -107,7 +107,7 @@ class ConnectorConfigServiceTest {
     void sinkUrlMatchesTargetDialect_oracle() {
         MigrationProject p = project(new HashMap<>());
         Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(
-                p, conn(DbType.ORACLE, "ora", 1521, "ORCLPDB1", "app"), "pw", "shop").get("config");
+                p, conn(DbType.ORACLE, "ora", 1521, "ORCLPDB1", "app"), "pw", DbType.SQLSERVER).get("config");
         assertThat(sink.get("connection.url").toString()).isEqualTo("jdbc:oracle:thin:@ora:1521/ORCLPDB1");
     }
 
@@ -116,7 +116,7 @@ class ConnectorConfigServiceTest {
     void inlineModePutsPlaintextPasswordIntoConfig() {
         MigrationProject p = project(new HashMap<>());
         Map<String, Object> src = (Map<String, Object>) svc.sourceConnector(p, src(), "s3cr3t").get("config");
-        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "t0ps3cret", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "t0ps3cret", DbType.SQLSERVER).get("config");
         assertThat(src).containsEntry("database.password", "s3cr3t");
         assertThat(sink).containsEntry("connection.password", "t0ps3cret");
     }
@@ -128,7 +128,7 @@ class ConnectorConfigServiceTest {
         ConnectorConfigService externalized = svc(new ConnectorSecretProperties("file", "/opt/connect-secrets", null));
         MigrationProject p = project(new HashMap<>());
         Map<String, Object> src = (Map<String, Object>) externalized.sourceConnector(p, src(), "s3cr3t").get("config");
-        Map<String, Object> sink = (Map<String, Object>) externalized.sinkConnector(p, tgt(), "s3cr3t", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) externalized.sinkConnector(p, tgt(), "s3cr3t", DbType.SQLSERVER).get("config");
         assertThat(src.get("database.password")).isEqualTo("${file:/opt/connect-secrets/source.properties:password}");
         assertThat(sink.get("connection.password")).isEqualTo("${file:/opt/connect-secrets/sink.properties:password}");
         assertThat(src.toString()).doesNotContain("s3cr3t");
@@ -139,7 +139,7 @@ class ConnectorConfigServiceTest {
     void preserveIsDefaultAndOmitsRenameSmtAndQuotesIdentifiers() {
         // #84: default must NOT rename, and must quote identifiers so source case survives.
         MigrationProject p = project(new HashMap<>());
-        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
         assertThat(sink.get("transforms").toString()).doesNotContain("caseKey", "caseValue", "snakeCase");
         assertThat(sink).containsEntry("quote.identifiers", "true");
     }
@@ -150,7 +150,7 @@ class ConnectorConfigServiceTest {
         Map<String, Object> cfg = new HashMap<>();
         cfg.put("namingStrategy", "snake_case");
         MigrationProject p = project(cfg);
-        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
         assertThat(sink.get("transforms").toString()).contains("caseKey", "caseValue");
         assertThat(sink).containsEntry("transforms.caseValue.strategy", "snake_case");
         assertThat(sink).containsEntry("quote.identifiers", "false");
@@ -162,7 +162,7 @@ class ConnectorConfigServiceTest {
         Map<String, Object> cfg = new HashMap<>();
         cfg.put("namingStrategy", "UPPER_CASE");
         MigrationProject p = project(cfg);
-        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
         assertThat(sink).containsEntry("transforms.caseKey.strategy", "upper_case");
         assertThat(sink).containsEntry("quote.identifiers", "true");
     }
@@ -193,7 +193,7 @@ class ConnectorConfigServiceTest {
         MigrationProject p = project(cfg);
 
         Map<String, Object> source = (Map<String, Object>) svc.sourceConnector(p, src(), "pw").get("config");
-        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
 
         assertThat(source).containsEntry("tombstones.on.delete", "true");
         assertThat(sink).containsEntry("delete.enabled", "true");
@@ -208,7 +208,7 @@ class ConnectorConfigServiceTest {
         MigrationProject p = project(cfg);
 
         Map<String, Object> source = (Map<String, Object>) svc.sourceConnector(p, src(), "pw").get("config");
-        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
 
         assertThat(source).containsEntry("tombstones.on.delete", "false");
         assertThat(sink).containsEntry("delete.enabled", "false");
@@ -223,7 +223,7 @@ class ConnectorConfigServiceTest {
         cfg.put("topicPrefix", "mssql");
         MigrationProject p = project(cfg);
 
-        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
         // Generic routing: consume everything under the prefix, strip all namespace segments to the table.
         assertThat(sink).containsEntry("topics.regex", "mssql\\..*");
         assertThat(sink).containsEntry("transforms.route.regex", "mssql\\.(?:[^.]+\\.)+([^.]+)");
@@ -258,7 +258,7 @@ class ConnectorConfigServiceTest {
         Map<String, Object> source = (Map<String, Object>) svc.sourceConnector(p, src(), "pw").get("config");
         assertThat(source).containsEntry("snapshot.max.threads", "4").containsEntry("snapshot.fetch.size", "5000");
 
-        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
         assertThat(sink).containsEntry("schema.evolution", "none");
     }
 
@@ -268,7 +268,7 @@ class ConnectorConfigServiceTest {
         MigrationProject p = project(new HashMap<>());
         Map<String, Object> source = (Map<String, Object>) svc.sourceConnector(p, src(), "pw").get("config");
         assertThat(source).containsEntry("snapshot.max.threads", "1");
-        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
         assertThat(sink).containsEntry("schema.evolution", "basic");
     }
 
@@ -280,7 +280,7 @@ class ConnectorConfigServiceTest {
         cfg.put("jsonColumns", "metadata");
         MigrationProject p = project(cfg);
 
-        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
         assertThat(sink).containsEntry("transforms.typeConversion.uuid.columns", "user_id,session_id");
         assertThat(sink).containsEntry("transforms.typeConversion.json.columns", "metadata");
     }

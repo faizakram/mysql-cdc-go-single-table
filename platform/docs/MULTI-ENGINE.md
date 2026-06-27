@@ -21,6 +21,13 @@ Homogeneous pairs use a **type-mapping fast-path** (types pass through unchanged
 pairs use the `TypeMappingMatrix` (canonical-category translation). Unmappable types are flagged in
 the Mapping drawer rather than silently coerced.
 
+## Engine version compatibility (cross-DB test findings)
+
+| Engine (as source) | Compatible with Debezium 2.5 | Note |
+|--------------------|------------------------------|------|
+| MySQL | **8.0** | MySQL **8.4 removed `SHOW MASTER STATUS`** → Debezium 2.5 snapshot fails (#120). Use MySQL ≤ 8.0 or upgrade the Debezium connector ≥ 2.6. The JDBC **sink** to MySQL 8.4 is unaffected. |
+| MongoDB | replica set / sharded | Change streams require a replica set; set connection option `authEnabled=false` for auth-less dev instances (#121). |
+
 ## CDC style & prerequisites per source engine
 
 | Engine | CDC style | Key prerequisites (checked by the **CDC** button / `/cdc-readiness`) |
