@@ -120,7 +120,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 aria-label="Open navigation" />
             )}
             <span className="app-title" style={{ fontSize: isMobile ? 15 : 17 }}>
-              {isMobile ? 'CDC Console' : 'Heterogeneous Database Migration (CDC)'}
+              {isMobile ? 'CDC Console' : 'Universal Database Migration Platform'}
             </span>
           </Space>
           <Space size={6}>
