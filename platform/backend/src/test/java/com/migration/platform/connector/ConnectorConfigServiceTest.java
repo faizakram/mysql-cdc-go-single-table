@@ -30,7 +30,8 @@ class ConnectorConfigServiceTest {
 
     private static List<SourceConnectorStrategy> strategies() {
         return List.of(new SqlServerSourceStrategy(), new MySqlSourceStrategy(),
-                new PostgresSourceStrategy(), new OracleSourceStrategy(), new Db2SourceStrategy());
+                new PostgresSourceStrategy(), new OracleSourceStrategy(), new Db2SourceStrategy(),
+                new com.migration.platform.connector.source.MongoSourceStrategy());
     }
 
     private static ConnectorConfigService svc(ConnectorSecretProperties secrets) {
@@ -164,6 +165,17 @@ class ConnectorConfigServiceTest {
         Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", "Employees").get("config");
         assertThat(sink).containsEntry("transforms.caseKey.strategy", "upper_case");
         assertThat(sink).containsEntry("quote.identifiers", "true");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void mongoSourceUsesChangeStreamsConnector() {
+        MigrationProject p = project(new HashMap<>());
+        Map<String, Object> cfg = (Map<String, Object>) svc.sourceConnector(
+                p, conn(DbType.MONGODB, "mongo", 27017, "shop", "repl"), "pw").get("config");
+        assertThat(cfg).containsEntry("connector.class", "io.debezium.connector.mongodb.MongoDbConnector");
+        assertThat(cfg).containsKey("mongodb.connection.string");
+        assertThat(cfg).containsEntry("database.include.list", "shop");
     }
 
     @Test

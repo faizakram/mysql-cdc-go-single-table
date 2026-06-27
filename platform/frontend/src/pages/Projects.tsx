@@ -19,7 +19,7 @@ import SchedulesDrawer from '../components/SchedulesDrawer';
 import PlanDrawer from '../components/PlanDrawer';
 import SchemaObjectsDrawer from '../components/SchemaObjectsDrawer';
 import EmptyState from '../components/EmptyState';
-import { ProjectOutlined, PartitionOutlined, ApartmentOutlined } from '@ant-design/icons';
+import { ProjectOutlined, PartitionOutlined, ApartmentOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 
 const STATUS_COLOR: Record<ProjectStatus, string> = {
@@ -126,6 +126,29 @@ export default function Projects() {
           <Button size="small" icon={<CheckCircleOutlined />}
             disabled={!canWrite || !row.sourceConnectionId || !row.targetConnectionId}
             onClick={() => setValidateFor(row)}>Validate</Button>
+          <Button size="small" icon={<ExperimentOutlined />}
+            onClick={async () => {
+              const hide = message.loading('Running dry-run…', 0);
+              try {
+                const r = await projectsApi.dryRun(row.id);
+                hide();
+                modal[r.ok ? 'success' : 'error']({
+                  title: `Dry-run — ${r.ok ? 'ready to migrate' : 'blockers found'}`,
+                  width: 560,
+                  content: (
+                    <div style={{ marginTop: 8 }}>
+                      <p>Source: {r.source?.success ? '✓' : '✗'} · Target: {r.target?.success ? '✓' : '✗'}
+                        {r.plan ? ` · ${r.plan.tables.length} tables, ~${r.plan.estimatedSeconds}s` : ''}</p>
+                      {r.blockers.length > 0 && <><b style={{ color: '#cf1322' }}>Blockers</b>
+                        <ul>{r.blockers.map((b: string) => <li key={b}>{b}</li>)}</ul></>}
+                      {r.warnings.length > 0 && <><b style={{ color: '#d97706' }}>Warnings</b>
+                        <ul>{r.warnings.map((w: string) => <li key={w}>{w}</li>)}</ul></>}
+                      {r.ok && r.warnings.length === 0 && <p>No issues — connectivity, plan and types all check out.</p>}
+                    </div>
+                  ),
+                });
+              } catch (e: any) { hide(); message.error(e?.response?.data?.message ?? 'Dry-run failed'); }
+            }}>Dry-run</Button>
           <Button size="small" icon={<PartitionOutlined />}
             onClick={() => setPlanFor(row)}>Plan</Button>
           <Button size="small" icon={<ApartmentOutlined />}

@@ -13,7 +13,7 @@ public final class EngineCatalog {
     private EngineCatalog() {}
 
     /** How change data is captured for a source engine — informs prerequisite checks (#80). */
-    public enum CdcStyle { TRANSACTION_LOG, BINLOG, LOGICAL_DECODING, LOG_MINER, NONE }
+    public enum CdcStyle { TRANSACTION_LOG, BINLOG, LOGICAL_DECODING, LOG_MINER, CHANGE_STREAM, NONE }
 
     /**
      * @param defaultPort        default TCP port
@@ -63,7 +63,11 @@ public final class EngineCatalog {
             DbType.DB2, new EngineSpec(DbType.DB2, "Db2", 50000,
                     "com.ibm.db2.jcc.DB2Driver",
                     "jdbc:db2://{host}:{port}/{db}",
-                    true, true, "io.debezium.connector.db2.Db2Connector", CdcStyle.TRANSACTION_LOG)
+                    true, true, "io.debezium.connector.db2.Db2Connector", CdcStyle.TRANSACTION_LOG),
+            DbType.MONGODB, new EngineSpec(DbType.MONGODB, "MongoDB", 27017,
+                    "(native driver)",
+                    "mongodb://{host}:{port}/{db}",
+                    true, false, "io.debezium.connector.mongodb.MongoDbConnector", CdcStyle.CHANGE_STREAM)
     );
 
     public static EngineSpec spec(DbType type) {

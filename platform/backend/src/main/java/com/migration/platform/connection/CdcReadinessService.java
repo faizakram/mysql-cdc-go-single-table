@@ -39,6 +39,13 @@ public class CdcReadinessService {
                 .orElseThrow(() -> new NotFoundException("Connection " + connectionId + " not found"));
         var style = EngineCatalog.spec(c.getDbType()).cdcStyle();
         List<Check> checks = new ArrayList<>();
+        if (c.getDbType() == DbType.MONGODB) {
+            // MongoDB isn't reached over JDBC; readiness is verified out-of-band (#100).
+            checks.add(new Check("change streams enabled", true,
+                    "MongoDB CDC uses change streams (requires a replica set / sharded cluster).",
+                    "Run MongoDB as a replica set; grant the connector read + changeStream privileges."));
+            return new Readiness(c.getDbType(), style.name(), true, checks);
+        }
         try (Connection conn = jdbc.open(c, crypto.decrypt(c.getPasswordEnc()))) {
             switch (c.getDbType()) {
                 case SQLSERVER -> sqlServer(conn, checks);
@@ -46,6 +53,7 @@ public class CdcReadinessService {
                 case POSTGRESQL -> postgres(conn, checks);
                 case ORACLE -> oracle(conn, checks);
                 case DB2 -> db2(checks);
+                case MONGODB -> { /* handled above */ }
             }
         } catch (SQLException e) {
             checks.add(new Check("connect", false, "Could not connect: " + e.getMessage(),

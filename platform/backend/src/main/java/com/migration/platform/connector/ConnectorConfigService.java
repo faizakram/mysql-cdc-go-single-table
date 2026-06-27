@@ -133,6 +133,7 @@ public class ConnectorConfigService {
             case SQLSERVER -> "jdbc:sqlserver://" + host + ":" + port + ";databaseName=" + db;
             case ORACLE -> "jdbc:oracle:thin:@" + host + ":" + port + "/" + db;
             case DB2 -> "jdbc:db2://" + host + ":" + port + "/" + db;
+            case MONGODB -> throw new IllegalArgumentException("MongoDB is source-only; choose a relational target");
         };
     }
 

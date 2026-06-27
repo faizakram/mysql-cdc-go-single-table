@@ -15,6 +15,12 @@ export default function PlanDrawer({ project, onClose }: { project: Project | nu
     enabled: open,
     retry: false,
   });
+  const cost = useQuery({
+    queryKey: ['cost', project?.id],
+    queryFn: () => projectsApi.costEstimate(project!.id),
+    enabled: open,
+    retry: false,
+  });
 
   return (
     <Drawer title={project ? `Migration plan — ${project.name}` : ''} width={820} open={open} onClose={onClose}
@@ -31,6 +37,9 @@ export default function PlanDrawer({ project, onClose }: { project: Project | nu
             <Col xs={12} md={6}><Statistic title="Parallel waves" value={q.data.levels} /></Col>
             <Col xs={12} md={6}><Statistic title="Total rows" value={q.data.totalRows} /></Col>
             <Col xs={12} md={6}><Statistic title="Est. duration" value={fmtDur(q.data.estimatedSeconds)} /></Col>
+            {cost.data && (
+              <Col xs={12} md={6}><Statistic title="Est. first-month cost" prefix="$" value={cost.data.totalFirstMonthUsd} precision={2} /></Col>
+            )}
           </Row>
           {q.data.hasCycles && (
             <Alert type="error" showIcon style={{ marginBottom: 12 }}

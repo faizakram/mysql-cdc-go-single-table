@@ -9,5 +9,6 @@ public enum DbType {
     POSTGRESQL,
     MYSQL,
     ORACLE,
-    DB2
+    DB2,
+    MONGODB   // non-relational; source-only (change streams) — flattened to relational targets (#100)
 }

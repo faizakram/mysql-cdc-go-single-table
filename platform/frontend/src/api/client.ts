@@ -5,7 +5,7 @@ import type {
   Project, ProjectRequest, Job, JobTableStatus, TableInfo, ColumnInfo, ColumnMapping, ProjectHealth,
   ReconciliationRun, LoginResponse, MeResponse, UserAdmin, RoleName, AlertItem, ConstraintApplyResult,
   Schedule, ScheduleRequest, OrchestratorStatus, AuditPage, EngineSpec, CdcReadiness,
-  MigrationPlan, SchemaObjectInventory,
+  MigrationPlan, SchemaObjectInventory, DryRunReport, CostEstimate,
 } from './types';
 
 const http = axios.create({ baseURL: '/api/v1' });
@@ -110,6 +110,8 @@ export const projectsApi = {
     http.put<Project>(`/projects/${id}`, body).then((r) => r.data),
   remove: (id: string) => http.delete(`/projects/${id}`).then(() => undefined),
   plan: (id: string) => http.get<MigrationPlan>(`/projects/${id}/plan`).then((r) => r.data),
+  dryRun: (id: string) => http.post<DryRunReport>(`/projects/${id}/dry-run`).then((r) => r.data),
+  costEstimate: (id: string) => http.get<CostEstimate>(`/projects/${id}/cost-estimate`).then((r) => r.data),
 };
 
 export const jobsApi = {

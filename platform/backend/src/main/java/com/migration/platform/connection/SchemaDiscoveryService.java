@@ -147,8 +147,8 @@ public class SchemaDiscoveryService {
             case SQLSERVER -> "dbo";
             case POSTGRESQL -> "public";
             case ORACLE -> c.getUsername() == null ? null : c.getUsername().toUpperCase();
-            // MySQL/Db2 expose tables under the catalog (database), not a separate schema pattern.
-            case MYSQL, DB2 -> null;
+            // MySQL/Db2 expose tables under the catalog (database); MongoDB has no relational schema.
+            case MYSQL, DB2, MONGODB -> null;
         };
     }
 

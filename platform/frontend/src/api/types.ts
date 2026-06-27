@@ -279,3 +279,17 @@ export interface SchemaObject {
 export interface SchemaObjectInventory {
   engine: DbType; migratable: number; reportOnly: number; objects: SchemaObject[];
 }
+
+export interface DryRunReport {
+  ok: boolean;
+  source?: { success: boolean; message: string; latencyMs?: number };
+  target?: { success: boolean; message: string; latencyMs?: number };
+  plan?: MigrationPlan;
+  blockers: string[];
+  warnings: string[];
+}
+
+export interface CostEstimate {
+  rows: number; bytes: number; durationSeconds: number;
+  computeUsd: number; storageUsdPerMonth: number; totalFirstMonthUsd: number; assumptions: string[];
+}

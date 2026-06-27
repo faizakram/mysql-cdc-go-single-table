@@ -127,6 +127,18 @@ public final class TypeMappingMatrix {
                 case "blob", "binary", "varbinary" -> Cat.BINARY;
                 default -> Cat.UNKNOWN;
             };
+            // MongoDB BSON types (#100): scalars map directly; documents/arrays become JSON on the target.
+            case MONGODB -> switch (t) {
+                case "objectid", "string", "symbol" -> Cat.VARCHAR;
+                case "int", "int32" -> Cat.INT32;
+                case "long", "int64" -> Cat.INT64;
+                case "double", "decimal", "decimal128" -> Cat.DOUBLE;
+                case "bool", "boolean" -> Cat.BOOL;
+                case "date", "timestamp" -> Cat.TIMESTAMP;
+                case "binary", "bindata" -> Cat.BINARY;
+                case "document", "object", "array", "json" -> Cat.JSON;
+                default -> Cat.UNKNOWN;
+            };
         };
     }
 
@@ -167,6 +179,8 @@ public final class TypeMappingMatrix {
                     e(Cat.TEXT, "CLOB"), e(Cat.DATE, "DATE"), e(Cat.TIME, "TIME"), e(Cat.TIMESTAMP, "TIMESTAMP"),
                     e(Cat.TIMESTAMPTZ, "TIMESTAMP"), e(Cat.BINARY, "BLOB"), e(Cat.UUID, "VARCHAR(36)"),
                     e(Cat.JSON, "CLOB"), e(Cat.UNKNOWN, "CLOB")).get(cat);
+            // MongoDB is source-only (canSink=false) — never a render target; covered for exhaustiveness.
+            case MONGODB -> throw new IllegalArgumentException("MongoDB cannot be a migration target");
         };
     }
 
