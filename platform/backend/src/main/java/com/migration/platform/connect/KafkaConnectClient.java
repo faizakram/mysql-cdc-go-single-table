@@ -66,6 +66,20 @@ public class KafkaConnectClient {
         client.post().uri("/connectors/{name}/restart", name).retrieve().toBodilessEntity();
     }
 
+    /** Transition a connector to the STOPPED state (Kafka Connect 3.5+) — keeps config, releases tasks. */
+    public void stop(String name) {
+        client.put().uri("/connectors/{name}/stop", name).retrieve().toBodilessEntity();
+    }
+
+    /**
+     * Delete a connector's committed source offsets (Kafka Connect 3.6+). The connector must be in the
+     * STOPPED state. With offsets cleared, a Debezium source re-runs its initial snapshot on resume —
+     * this is what powers "Re-run full load" (#131).
+     */
+    public void deleteOffsets(String name) {
+        client.delete().uri("/connectors/{name}/offsets", name).retrieve().toBodilessEntity();
+    }
+
     public void delete(String name) {
         client.delete().uri("/connectors/{name}", name).retrieve().toBodilessEntity();
     }

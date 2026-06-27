@@ -158,6 +158,7 @@ export const jobsApi = {
   pause: (id: string) => http.post<Job>(`/jobs/${id}/pause`).then((r) => r.data),
   resume: (id: string) => http.post<Job>(`/jobs/${id}/resume`).then((r) => r.data),
   stop: (id: string) => http.post<Job>(`/jobs/${id}/stop`).then((r) => r.data),
+  reload: (id: string) => http.post<Job>(`/jobs/${id}/reload`).then((r) => r.data),
 };
 
 export const schedulesApi = {
