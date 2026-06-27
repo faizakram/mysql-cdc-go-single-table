@@ -99,6 +99,15 @@ management:
   endpoint:
     health:
       show-details: when_authorized
+      # Kubernetes liveness/readiness probes (#125): exposes /actuator/health/{liveness,readiness}
+      # which deploy/k8s/20-platform-backend.yaml probes. Readiness includes the metadata DB.
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
 
 springdoc:
   swagger-ui:

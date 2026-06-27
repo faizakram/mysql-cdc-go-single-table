@@ -11,14 +11,26 @@ import java.util.Map;
 public class ConnectionTestService {
 
     private final JdbcSupport jdbc;
+    private final MongoSupport mongo;
 
-    public ConnectionTestService(JdbcSupport jdbc) {
+    public ConnectionTestService(JdbcSupport jdbc, MongoSupport mongo) {
         this.jdbc = jdbc;
+        this.mongo = mongo;
     }
 
     public TestResult test(DbType type, String host, int port, String database,
                            String username, String password, Map<String, Object> options) {
         long start = System.currentTimeMillis();
+        if (type == DbType.MONGODB) {   // MongoDB isn't reachable over JDBC (#124)
+            try {
+                DbConnection c = new DbConnection();
+                c.setDbType(type); c.setHost(host); c.setPort(port); c.setDatabaseName(database);
+                c.setUsername(username); c.setOptions(options);
+                return new TestResult(true, "Connection successful", mongo.ping(c, password));
+            } catch (Exception e) {
+                return new TestResult(false, e.getMessage(), System.currentTimeMillis() - start);
+            }
+        }
         try (Connection conn = jdbc.open(type, host, port, database, username, password, options)) {
             boolean valid = conn.isValid(8);
             long latency = System.currentTimeMillis() - start;
