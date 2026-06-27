@@ -59,6 +59,16 @@ platform:
     # Scheduled drift-detection reconciliation (#49). Runs only for projects opted in
     # (config.autoReconcile = true). Default: every 6 hours.
     cron: ${RECONCILIATION_CRON:0 0 */6 * * *}
+  validation:
+    # Integrity validation job tunables (#152), for scaling the report to millions of rows.
+    # Per-query JDBC timeout so one giant table can't hang a run; a timeout surfaces as that
+    # table's ERROR. 0 disables. Default: 5 minutes.
+    query-timeout-seconds: ${VALIDATION_QUERY_TIMEOUT_SECONDS:300}
+    # Source primary keys sampled for the missing-row check.
+    missing-sample-size: ${VALIDATION_MISSING_SAMPLE_SIZE:1000}
+    # When true, source/target row counts use fast engine catalog statistics (e.g. PostgreSQL
+    # reltuples) instead of exact COUNT(*) — much cheaper on huge tables, but approximate.
+    approximate-counts: ${VALIDATION_APPROXIMATE_COUNTS:false}
   alerts:
     # Optional Slack/Teams/custom incoming-webhook URL for notifications (#52). Empty = log only.
     webhook-url: ${ALERTS_WEBHOOK_URL:}
