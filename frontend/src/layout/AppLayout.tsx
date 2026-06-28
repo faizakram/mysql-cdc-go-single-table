@@ -5,7 +5,7 @@ import {
 import {
   DashboardOutlined, DatabaseOutlined, ProjectOutlined, UserOutlined, LogoutOutlined, TeamOutlined,
   BellOutlined, AreaChartOutlined, AuditOutlined, MenuOutlined, DeploymentUnitOutlined,
-  MoonOutlined, SunOutlined, ColumnHeightOutlined, ApiOutlined, ThunderboltOutlined,
+  MoonOutlined, SunOutlined, ColumnHeightOutlined, ApiOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -19,7 +19,6 @@ const { useBreakpoint } = Grid;
 
 const PAGE_META: Record<string, { title: string; desc: string; icon: ReactNode }> = {
   '/': { title: 'Dashboard', desc: 'Live pipeline health, lag and the job queue', icon: <DashboardOutlined /> },
-  '/live': { title: 'Live stream', desc: 'Real-time CDC throughput & lag per table', icon: <ThunderboltOutlined /> },
   '/projects': { title: 'Projects', desc: 'Plan, configure and run migrations', icon: <ProjectOutlined /> },
   '/connections': { title: 'Connections', desc: 'Source and target databases', icon: <DatabaseOutlined /> },
   '/alerts': { title: 'Alerts', desc: 'Connector failures and lag breaches', icon: <BellOutlined /> },
@@ -54,7 +53,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const items = [
     { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
-    { key: '/live', icon: <ThunderboltOutlined />, label: 'Live stream' },
     { key: '/projects', icon: <ProjectOutlined />, label: 'Projects' },
     { key: '/connections', icon: <DatabaseOutlined />, label: 'Connections' },
     {

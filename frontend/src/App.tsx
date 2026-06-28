@@ -7,7 +7,6 @@ import { useAuth } from './auth/AuthContext';
 
 // Route-level code-splitting (#128): each page ships as its own chunk, loaded on demand.
 const Dashboard = lazy(() => import('./pages/Dashboard'));
-const LiveStream = lazy(() => import('./pages/LiveStream'));
 const Projects = lazy(() => import('./pages/Projects'));
 const Connections = lazy(() => import('./pages/Connections'));
 const Alerts = lazy(() => import('./pages/Alerts'));
@@ -39,7 +38,6 @@ export default function App() {
       <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/live" element={<LiveStream />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/connections" element={<Connections />} />
           <Route path="/alerts" element={<Alerts />} />
