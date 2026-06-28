@@ -5,14 +5,18 @@ import {
 import {
   DashboardOutlined, DatabaseOutlined, ProjectOutlined, UserOutlined, LogoutOutlined, TeamOutlined,
   BellOutlined, AreaChartOutlined, AuditOutlined, MenuOutlined, DeploymentUnitOutlined,
-  MoonOutlined, SunOutlined, ColumnHeightOutlined, ApiOutlined,
+  MoonOutlined, SunOutlined, ColumnHeightOutlined, ApiOutlined, QuestionCircleOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useThemeMode } from '../theme/ThemeMode';
 import { alertsApi } from '../api/client';
+import OnboardingTour from '../components/OnboardingTour';
+
+/** localStorage flag so the first-run tour shows once per browser, then only on demand via “Guide”. */
+const TOUR_SEEN_KEY = 'mp_tour_done';
 
 const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
@@ -47,17 +51,27 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const screens = useBreakpoint();
   const isMobile = !screens.lg;
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+
+  // First-run navigation guide: open once for a brand-new user (no localStorage flag yet), after a short
+  // delay so the nav has painted and the tour can anchor to it. Replayable from the “Guide” button.
+  useEffect(() => {
+    if (!user || localStorage.getItem(TOUR_SEEN_KEY)) return;
+    const t = setTimeout(() => setTourOpen(true), 700);
+    return () => clearTimeout(t);
+  }, [user]);
+  const closeTour = () => { setTourOpen(false); localStorage.setItem(TOUR_SEEN_KEY, '1'); };
 
   const firing = useQuery({ queryKey: ['alerts-count'], queryFn: alertsApi.count, refetchInterval: 15000 });
   const grafanaUrl = (import.meta.env.VITE_GRAFANA_URL as string) || 'http://localhost:3001';
 
   const items = [
-    { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
-    { key: '/projects', icon: <ProjectOutlined />, label: 'Projects' },
-    { key: '/connections', icon: <DatabaseOutlined />, label: 'Connections' },
+    { key: '/', icon: <DashboardOutlined />, label: <span data-tour="nav-dashboard">Dashboard</span> },
+    { key: '/projects', icon: <ProjectOutlined />, label: <span data-tour="nav-projects">Projects</span> },
+    { key: '/connections', icon: <DatabaseOutlined />, label: <span data-tour="nav-connections">Connections</span> },
     {
       key: '/alerts', icon: <BellOutlined />,
-      label: <Space>Alerts<Badge count={firing.data?.firing ?? 0} size="small" /></Space>,
+      label: <span data-tour="nav-alerts"><Space>Alerts<Badge count={firing.data?.firing ?? 0} size="small" /></Space></span>,
     },
     ...(user?.role === 'ADMIN' ? [
       { key: '/users', icon: <TeamOutlined />, label: 'Users' },
@@ -126,6 +140,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </span>
           </Space>
           <Space size={6}>
+            <Tooltip title="Guided tour">
+              <Button
+                type="text"
+                aria-label="Open the guided tour"
+                icon={<QuestionCircleOutlined />}
+                onClick={() => setTourOpen(true)}
+              />
+            </Tooltip>
             <Tooltip title={`Density: ${density}`}>
               <Button
                 type={density === 'compact' ? 'primary' : 'text'}
@@ -178,6 +200,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </footer>
         </Content>
       </Layout>
+      <OnboardingTour open={tourOpen} onClose={closeTour} />
     </Layout>
   );
 }
