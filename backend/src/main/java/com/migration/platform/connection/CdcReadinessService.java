@@ -69,6 +69,16 @@ public class CdcReadinessService {
         checks.add(new Check("database CDC enabled", dbCdc,
                 dbCdc ? "sys.databases.is_cdc_enabled = 1" : "CDC is not enabled on this database",
                 "Run EXEC sys.sp_cdc_enable_db as a DBA, then enable capture per table."));
+        // Azure SQL Database (EngineEdition = 5) has no SQL Server Agent — CDC capture/cleanup runs on a
+        // built-in scheduler — and sys.dm_server_services isn't queryable there. Only the Agent check is
+        // Azure-specific; the database-level CDC requirement above is identical across editions.
+        int edition = parseIntSafe(scalar(conn, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT)"));
+        if (edition == 5) {
+            checks.add(new Check("CDC scheduler", true,
+                    "Azure SQL Database runs CDC capture/cleanup on a built-in scheduler (no SQL Server Agent).",
+                    "Ensure the database service tier supports CDC (S3 / 100 DTU or higher)."));
+            return;
+        }
         boolean agent = scalarBool(conn,
                 "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE 'SQL Server Agent%' AND status = 4) THEN 1 ELSE 0 END");
         checks.add(new Check("SQL Server Agent running", agent,

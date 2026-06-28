@@ -3,6 +3,7 @@ package com.migration.platform.job;
 import com.migration.platform.common.CryptoService;
 import com.migration.platform.common.NotFoundException;
 import com.migration.platform.connect.KafkaConnectClient;
+import com.migration.platform.connection.CdcReadinessService;
 import com.migration.platform.connection.ConnectionRepository;
 import com.migration.platform.connection.DbConnection;
 import com.migration.platform.connector.ConnectorConfigService;
@@ -41,11 +42,13 @@ public class JobService {
     private final TableStatusRepository tableStatus;
     private final com.migration.platform.audit.AuditService audit;
     private final com.migration.platform.connection.TargetSchemaService targetSchema;
+    private final CdcReadinessService cdcReadiness;
 
     public JobService(JobRepository repo, ProjectRepository projects, ConnectionRepository connections,
                       KafkaConnectClient connect, ConnectorConfigService configService, CryptoService crypto,
                       TableStatusRepository tableStatus, com.migration.platform.audit.AuditService audit,
-                      com.migration.platform.connection.TargetSchemaService targetSchema) {
+                      com.migration.platform.connection.TargetSchemaService targetSchema,
+                      CdcReadinessService cdcReadiness) {
         this.repo = repo;
         this.projects = projects;
         this.connections = connections;
@@ -55,6 +58,7 @@ public class JobService {
         this.tableStatus = tableStatus;
         this.audit = audit;
         this.targetSchema = targetSchema;
+        this.cdcReadiness = cdcReadiness;
     }
 
     @Transactional(readOnly = true)
@@ -104,6 +108,12 @@ public class JobService {
         try {
             DbConnection src = requireConnection(project.getSourceConnectionId(), "source");
             DbConnection tgt = requireConnection(project.getTargetConnectionId(), "target");
+
+            // Pre-flight: the Debezium source connector refuses to validate/start — even for the
+            // full-load snapshot — when the source database isn't CDC-ready, returning a cryptic
+            // Connect 400 ("database X is not enabled for Change Data Capture") that fails the whole
+            // job. Surface the actionable readiness findings up front instead (#191).
+            assertSourceCdcReady(project.getSourceConnectionId());
 
             Map<String, Object> source = configService.sourceConnector(project, src, crypto.decrypt(src.getPasswordEnc()));
             Map<String, Object> sink = configService.sinkConnector(project, tgt, crypto.decrypt(tgt.getPasswordEnc()), src.getDbType());
@@ -291,6 +301,20 @@ public class JobService {
         if (v instanceof List<?> list) return list.stream().map(Object::toString).toList();
         if (v instanceof String s && !s.isBlank()) return List.of(s.split("\\s*,\\s*"));
         return List.of();
+    }
+
+    /**
+     * Block job start when the source database isn't CDC-ready, with the readiness findings surfaced
+     * as a 400 instead of letting the Debezium connector fail cryptically at deploy time (#191).
+     */
+    private void assertSourceCdcReady(UUID sourceConnectionId) {
+        var readiness = cdcReadiness.check(sourceConnectionId);
+        if (readiness.ready()) return;
+        String issues = readiness.checks().stream()
+                .filter(c -> !c.ok())
+                .map(c -> c.name() + " — " + c.detail() + " Fix: " + c.remediation())
+                .collect(java.util.stream.Collectors.joining(" | "));
+        throw new IllegalArgumentException("Source database is not ready for CDC: " + issues);
     }
 
     private MigrationProject requireProject(UUID id) {
