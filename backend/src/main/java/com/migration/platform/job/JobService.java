@@ -1,5 +1,6 @@
 package com.migration.platform.job;
 
+import com.migration.platform.bulkload.BulkCopyService;
 import com.migration.platform.common.CryptoService;
 import com.migration.platform.common.NotFoundException;
 import com.migration.platform.connect.KafkaConnectClient;
@@ -43,12 +44,13 @@ public class JobService {
     private final com.migration.platform.audit.AuditService audit;
     private final com.migration.platform.connection.TargetSchemaService targetSchema;
     private final CdcReadinessService cdcReadiness;
+    private final BulkCopyService bulkCopy;
 
     public JobService(JobRepository repo, ProjectRepository projects, ConnectionRepository connections,
                       KafkaConnectClient connect, ConnectorConfigService configService, CryptoService crypto,
                       TableStatusRepository tableStatus, com.migration.platform.audit.AuditService audit,
                       com.migration.platform.connection.TargetSchemaService targetSchema,
-                      CdcReadinessService cdcReadiness) {
+                      CdcReadinessService cdcReadiness, BulkCopyService bulkCopy) {
         this.repo = repo;
         this.projects = projects;
         this.connections = connections;
@@ -59,6 +61,7 @@ public class JobService {
         this.audit = audit;
         this.targetSchema = targetSchema;
         this.cdcReadiness = cdcReadiness;
+        this.bulkCopy = bulkCopy;
     }
 
     @Transactional(readOnly = true)
@@ -109,11 +112,17 @@ public class JobService {
             DbConnection src = requireConnection(project.getSourceConnectionId(), "source");
             DbConnection tgt = requireConnection(project.getTargetConnectionId(), "target");
 
-            // Pre-flight: the Debezium source connector refuses to validate/start — even for the
-            // full-load snapshot — when the source database isn't CDC-ready, returning a cryptic
-            // Connect 400 ("database X is not enabled for Change Data Capture") that fails the whole
-            // job. Surface the actionable readiness findings up front instead (#191).
-            assertSourceCdcReady(project.getSourceConnectionId(), selectedTables(project));
+            // The Debezium source connector refuses to start — even for the full-load snapshot — unless
+            // the source is CDC-ready (database-level CDC AND a capture instance per selected table).
+            // Rather than block, auto-fall back to a one-time CDC-free full load (bulk copy) so a
+            // migration still completes when CDC can't be enabled on the source (#191).
+            List<String> tables = selectedTables(project);
+            boolean cdcReady = cdcReadiness.check(project.getSourceConnectionId()).ready()
+                    && cdcReadiness.tablesMissingCdc(project.getSourceConnectionId(), tables).isEmpty();
+            if (!cdcReady) {
+                log.info("Job {}: source not CDC-ready — running a CDC-free full load (bulk copy)", id);
+                return startBulkFullLoad(job, project, tables);
+            }
 
             Map<String, Object> source = configService.sourceConnector(project, src, crypto.decrypt(src.getPasswordEnc()));
             Map<String, Object> sink = configService.sinkConnector(project, tgt, crypto.decrypt(tgt.getPasswordEnc()), src.getDbType());
@@ -307,30 +316,42 @@ public class JobService {
      * Block job start when the source database isn't CDC-ready, with the readiness findings surfaced
      * as a 400 instead of letting the Debezium connector fail cryptically at deploy time (#191).
      */
-    private void assertSourceCdcReady(UUID sourceConnectionId, List<String> selectedTables) {
-        var readiness = cdcReadiness.check(sourceConnectionId);
-        if (!readiness.ready()) {
-            String issues = readiness.checks().stream()
-                    .filter(c -> !c.ok())
-                    .map(c -> c.name() + " — " + c.detail() + " Fix: " + c.remediation())
-                    .collect(java.util.stream.Collectors.joining(" | "));
-            throw new IllegalArgumentException("Source database is not ready for CDC: " + issues);
+    /**
+     * CDC-free full load (#191): when the source isn't CDC-ready, run a one-time JDBC bulk copy instead
+     * of deploying Debezium connectors. The job moves to SNAPSHOT/"full-load" and the actual copy runs
+     * on a background thread; it's kicked off only after this transaction commits, so the worker reads
+     * a persisted job. No connectors are created, so there's no ongoing streaming — this is a one-shot
+     * migration of the current data.
+     */
+    private JobResponse startBulkFullLoad(MigrationJob job, MigrationProject project, List<String> tables) {
+        var mc = com.migration.platform.connector.MigrationConfig.from(project.getConfig(), project.getName());
+        job.setSourceConnectorName(null);
+        job.setSinkConnectorName(null);
+        job.setStatus(JobStatus.SNAPSHOT);
+        job.setPhase("full-load");
+        job.setStartedAt(OffsetDateTime.now());
+        job.setError(null);
+        project.setStatus(ProjectStatus.ACTIVE);
+        projects.save(project);
+        seedTableStatus(job, project);
+        MigrationJob saved = repo.save(job);
+        audit.record("JOB_START", job.getProjectId().toString(),
+                java.util.Map.of("jobId", saved.getId().toString(), "mode", "full-load"));
+
+        var req = new BulkCopyService.BulkCopyRequest(
+                saved.getId(), project.getId(), project.getSourceConnectionId(), project.getTargetConnectionId(),
+                mc.targetSchema(), mc.namingStrategy(), tables, mc.snapshotFetchSize());
+        // Start the copy only after the SNAPSHOT state is committed, so the worker thread doesn't race
+        // the transaction and read a stale (CREATED) job.
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override public void afterCommit() { bulkCopy.startAsync(req); }
+                    });
+        } else {
+            bulkCopy.startAsync(req);
         }
-        // Database-level CDC alone isn't enough on SQL Server: the connector derives its capture set
-        // from per-table CDC instances, so a selected table without table-level CDC is skipped
-        // entirely — not even the full load is delivered, and nothing is created on the target. Block
-        // with the offending tables rather than letting the job "succeed" while delivering nothing.
-        List<String> missing = cdcReadiness.tablesMissingCdc(sourceConnectionId, selectedTables);
-        if (!missing.isEmpty()) {
-            int shown = Math.min(missing.size(), 15);
-            String list = String.join(", ", missing.subList(0, shown))
-                    + (missing.size() > shown ? " … (" + missing.size() + " tables total)" : "");
-            throw new IllegalArgumentException(
-                    "These selected tables have no CDC capture instance, so the SQL Server connector will skip "
-                    + "them — not even the full load is delivered and nothing is created on the target: " + list
-                    + ". Enable table-level CDC for each, e.g. EXEC sys.sp_cdc_enable_table "
-                    + "@source_schema='dbo', @source_name='<table>', @role_name=NULL.");
-        }
+        return JobResponse.from(saved);
     }
 
     private MigrationProject requireProject(UUID id) {
