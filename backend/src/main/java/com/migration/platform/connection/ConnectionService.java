@@ -7,6 +7,8 @@ import com.migration.platform.common.PageResponse;
 import com.migration.platform.connection.dto.ConnectionRequest;
 import com.migration.platform.connection.dto.ConnectionResponse;
 import com.migration.platform.connection.dto.TestResult;
+import com.migration.platform.job.JobStatus;
+import com.migration.platform.project.MigrationProject;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -16,10 +18,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class ConnectionService {
@@ -28,13 +32,18 @@ public class ConnectionService {
     private final CryptoService crypto;
     private final ConnectionTestService tester;
     private final AuditService audit;
+    private final com.migration.platform.project.ProjectRepository projects;
+    private final com.migration.platform.job.JobRepository jobs;
 
     public ConnectionService(ConnectionRepository repo, CryptoService crypto, ConnectionTestService tester,
-                             AuditService audit) {
+                             AuditService audit, com.migration.platform.project.ProjectRepository projects,
+                             com.migration.platform.job.JobRepository jobs) {
         this.repo = repo;
         this.crypto = crypto;
         this.tester = tester;
         this.audit = audit;
+        this.projects = projects;
+        this.jobs = jobs;
     }
 
     @Transactional(readOnly = true)
@@ -83,6 +92,12 @@ public class ConnectionService {
     @Transactional
     public ConnectionResponse update(UUID id, ConnectionRequest req) {
         DbConnection c = find(id);
+        // Don't let host/port/credentials change under a running migration — it would silently break
+        // the live connectors (#179). Block while any project using this connection has an active job.
+        if (usedByActiveJob(id)) {
+            throw new IllegalArgumentException(
+                    "This connection is in use by a running migration; stop the job before editing it.");
+        }
         apply(c, req);
         c = repo.save(c);
         audit.record("CONNECTION_UPDATE", id.toString(), Map.of("name", req.name()));
@@ -92,9 +107,27 @@ public class ConnectionService {
     @Transactional
     public void delete(UUID id) {
         if (!repo.existsById(id)) throw new NotFoundException("Connection " + id + " not found");
+        // Block deleting a connection still referenced by any project — otherwise the project's wiring
+        // is orphaned and its jobs fail cryptically (#179).
+        List<MigrationProject> refs = projects.findBySourceConnectionIdOrTargetConnectionId(id, id);
+        if (!refs.isEmpty()) {
+            String names = refs.stream().map(MigrationProject::getName).distinct().limit(5).collect(Collectors.joining(", "));
+            throw new IllegalArgumentException(
+                    "Connection is used by project(s): " + names + ". Reassign or delete them first.");
+        }
         repo.deleteById(id);
         audit.record("CONNECTION_DELETE", id.toString(), Map.of());
     }
+
+    /** True if any project using this connection (as source or target) has a deployed/active job. */
+    private boolean usedByActiveJob(UUID connectionId) {
+        return projects.findBySourceConnectionIdOrTargetConnectionId(connectionId, connectionId).stream()
+                .anyMatch(p -> jobs.existsByProjectIdAndStatusIn(p.getId(), ACTIVE_JOB));
+    }
+
+    /** Job states whose connectors are deployed — editing/deleting backing resources would break them. */
+    private static final EnumSet<JobStatus> ACTIVE_JOB =
+            EnumSet.of(JobStatus.RUNNING, JobStatus.SNAPSHOT, JobStatus.PAUSED);
 
     /** Test by stored connection id (decrypts the secret transiently). */
     @Transactional(readOnly = true)

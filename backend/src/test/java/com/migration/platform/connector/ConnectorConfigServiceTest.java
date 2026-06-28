@@ -204,6 +204,21 @@ class ConnectorConfigServiceTest {
         // #161: collapse per-key events in a batch so insert+delete of the same row under load
         // resolves to the delete (no phantom rows on the target).
         assertThat(sink).containsEntry("use.reduction.buffer", "true");
+        // #176: poison rows go to a DLQ and don't stop the task (resilient default).
+        assertThat(sink).containsEntry("errors.tolerance", "all");
+        assertThat(sink).containsEntry("errors.deadletterqueue.topic.name", "employees-migration-sink-dlq");
+        assertThat(sink).containsEntry("errors.log.enable", "true");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void strictErrorToleranceDisablesDlqAndFailsFast() {
+        Map<String, Object> cfg = new HashMap<>();
+        cfg.put("errorTolerance", "none");
+        MigrationProject p = project(cfg);
+        Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
+        assertThat(sink).containsEntry("errors.tolerance", "none");
+        assertThat(sink).doesNotContainKey("errors.deadletterqueue.topic.name");
     }
 
     @Test

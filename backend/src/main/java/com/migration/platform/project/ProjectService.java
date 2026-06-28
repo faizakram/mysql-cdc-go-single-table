@@ -6,6 +6,8 @@ import com.migration.platform.common.PageResponse;
 import com.migration.platform.connection.ConnectionRepository;
 import com.migration.platform.connection.DbConnection;
 import com.migration.platform.connection.EngineCatalog;
+import com.migration.platform.job.JobRepository;
+import com.migration.platform.job.JobStatus;
 import com.migration.platform.project.dto.ProjectRequest;
 import com.migration.platform.project.dto.ProjectResponse;
 import jakarta.persistence.criteria.Predicate;
@@ -17,22 +19,30 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
 public class ProjectService {
 
+    /** A job in one of these states has connectors deployed — editing wiring/config would orphan them (#179). */
+    static final EnumSet<JobStatus> ACTIVE_JOB = EnumSet.of(JobStatus.RUNNING, JobStatus.SNAPSHOT, JobStatus.PAUSED);
+
     private final ProjectRepository repo;
     private final AuditService audit;
     private final ConnectionRepository connections;
+    private final JobRepository jobs;
 
-    public ProjectService(ProjectRepository repo, AuditService audit, ConnectionRepository connections) {
+    public ProjectService(ProjectRepository repo, AuditService audit, ConnectionRepository connections,
+                          JobRepository jobs) {
         this.repo = repo;
         this.audit = audit;
         this.connections = connections;
+        this.jobs = jobs;
     }
 
     /** Reject unsupported source→target engine pairings server-side (#76/#82). */
@@ -90,6 +100,16 @@ public class ProjectService {
     @Transactional
     public ProjectResponse update(UUID id, ProjectRequest req) {
         MigrationProject p = find(id);
+        // Changing the source/target connections or the migration config while a job is running would
+        // leave the deployed connectors pointing at stale wiring (#179). Allow name/description edits;
+        // block wiring/config changes until the job is stopped.
+        boolean wiringChanged = !Objects.equals(p.getSourceConnectionId(), req.sourceConnectionId())
+                || !Objects.equals(p.getTargetConnectionId(), req.targetConnectionId())
+                || !Objects.equals(p.getConfig(), req.config());
+        if (wiringChanged && jobs.existsByProjectIdAndStatusIn(id, ACTIVE_JOB)) {
+            throw new IllegalArgumentException(
+                    "Stop the running job before changing this project's connections or configuration.");
+        }
         apply(p, req);
         validatePair(p);
         p = repo.save(p);
@@ -100,6 +120,9 @@ public class ProjectService {
     @Transactional
     public void delete(UUID id) {
         if (!repo.existsById(id)) throw new NotFoundException("Project " + id + " not found");
+        if (jobs.existsByProjectIdAndStatusIn(id, ACTIVE_JOB)) {
+            throw new IllegalArgumentException("Stop the running job before deleting this project.");
+        }
         repo.deleteById(id);
         audit.record("PROJECT_DELETE", id.toString(), Map.of());
     }

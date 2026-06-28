@@ -126,6 +126,19 @@ public class ConnectorConfigService {
         }
         cfg.put("primary.key.mode", "record_key");
         cfg.put("schema.evolution", mc.schemaEvolution());
+
+        // Error handling / dead-letter queue (#176): by default tolerate per-record failures and route
+        // the offending record (with its error context) to a DLQ topic, so one poison row (FK/type
+        // conflict) no longer stops the task and silently stalls CDC. Set errorTolerance=none for
+        // strict fail-fast. Failed records are visible in <sink>-dlq and logged for triage/replay.
+        cfg.put("errors.tolerance", mc.errorTolerance());
+        cfg.put("errors.log.enable", "true");
+        cfg.put("errors.log.include.messages", "true");
+        if ("all".equals(mc.errorTolerance())) {
+            cfg.put("errors.deadletterqueue.topic.name", sinkName(p) + "-dlq");
+            cfg.put("errors.deadletterqueue.topic.replication.factor", "1");
+            cfg.put("errors.deadletterqueue.context.headers.enable", "true");
+        }
         // Quote identifiers unless the names are already lowercase snake_case — so PRESERVE / camel /
         // Pascal / UPPER case survive exactly on the target (e.g. PostgreSQL would otherwise fold them).
         cfg.put("quote.identifiers", String.valueOf(ns != NamingStrategy.SNAKE_CASE));

@@ -12,4 +12,6 @@ public interface JobRepository extends JpaRepository<MigrationJob, UUID> {
     long countByStatusIn(Collection<JobStatus> statuses);
 
     List<MigrationJob> findByStatusIn(Collection<JobStatus> statuses);
+
+    boolean existsByProjectIdAndStatusIn(UUID projectId, Collection<JobStatus> statuses);
 }

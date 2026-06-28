@@ -19,7 +19,8 @@ public record MigrationConfig(
         String schemaEvolution,   // sink DDL evolution: basic | none (#26)
         int snapshotMaxThreads,   // parallel snapshot workers (#27)
         int snapshotFetchSize,    // snapshot row fetch size (#27)
-        NamingStrategy namingStrategy   // identifier naming on the target (#84); default PRESERVE
+        NamingStrategy namingStrategy,  // identifier naming on the target (#84); default PRESERVE
+        String errorTolerance     // sink errors: all (skip bad rows to DLQ, keep streaming) | none (fail fast) (#176)
 ) {
     public static MigrationConfig from(Map<String, Object> cfg, String projectName) {
         cfg = cfg == null ? Map.of() : cfg;
@@ -35,7 +36,8 @@ public record MigrationConfig(
                 str(cfg, "schemaEvolution", "basic"),
                 Math.max(1, intVal(cfg, "snapshotMaxThreads", 1)),
                 Math.max(1, intVal(cfg, "snapshotFetchSize", 2000)),
-                NamingStrategy.parse(str(cfg, "namingStrategy", "preserve"))
+                NamingStrategy.parse(str(cfg, "namingStrategy", "preserve")),
+                "none".equalsIgnoreCase(str(cfg, "errorTolerance", "all")) ? "none" : "all"
         );
     }
 
