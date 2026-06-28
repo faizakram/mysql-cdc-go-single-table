@@ -82,6 +82,12 @@ platform:
     # Raise a LAG alert when a project's sink consumer-group lag exceeds this many records (#28).
     # 0 disables lag alerting.
     lag-threshold: ${ALERTS_LAG_THRESHOLD:0}
+  monitoring:
+    live:
+      # Live sync monitor (#168): tails the CDC topics as a Kafka consumer for real-time per-table
+      # throughput + lag, pushed to the UI over SSE. Independent consumer group — no sink impact.
+      enabled: ${MONITORING_LIVE_ENABLED:true}
+      window-seconds: ${MONITORING_LIVE_WINDOW_SECONDS:10}
   metrics:
     # How often (ms) to refresh per-project Prometheus gauges (lag, connector up/down) from live
     # connector health (#50). Lower = fresher dashboards, more calls to Kafka Connect.
