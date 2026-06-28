@@ -270,14 +270,52 @@ public class JobService {
      * Best-effort reset of a sink connector's consumer-group offsets (stop → clear → resume) so it
      * re-reads its topics from the start. Ensures a changed target schema / naming strategy is fully
      * re-delivered rather than skipped. Non-fatal: a reset failure must not block the run.
+     *
+     * <p>The reset deliberately STOPs the connector; the resume MUST always run, even if clearing the
+     * offsets fails. Otherwise the sink is stranded in STOPPED and the whole migration silently delivers
+     * nothing to the target (the source still snapshots into Kafka, but no rows ever land) — which then
+     * surfaces only later as an all-tables-missing integrity report.
      */
     private void resetSinkOffsets(String sinkConnector) {
         try {
             connect.stop(sinkConnector);
             resetOffsetsWithRetry(sinkConnector);
-            connect.resume(sinkConnector);
         } catch (Exception e) {
             log.warn("Could not reset sink offsets for {} (continuing): {}", sinkConnector, e.getMessage());
+        } finally {
+            resumeSink(sinkConnector);
+        }
+    }
+
+    /**
+     * Resume a sink and confirm it actually left STOPPED. Resume can race the herder applying the STOP,
+     * so retry until the connector reports a non-STOPPED state. A sink left STOPPED breaks the migration.
+     */
+    private void resumeSink(String sinkConnector) {
+        for (int attempt = 0; attempt < 6; attempt++) {
+            try {
+                connect.resume(sinkConnector);
+                Thread.sleep(500);
+                if (!"STOPPED".equalsIgnoreCase(connectorState(sinkConnector))) return;
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (Exception e) {
+                log.warn("Resume attempt {} for sink {} failed: {}", attempt + 1, sinkConnector, e.getMessage());
+                try { Thread.sleep(500); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
+            }
+        }
+        log.error("Sink {} is still STOPPED after resume attempts — it will not deliver to the target until resumed",
+                sinkConnector);
+    }
+
+    /** Current connector state ("RUNNING"/"STOPPED"/...), or null if it can't be read. */
+    private String connectorState(String name) {
+        try {
+            Object c = connect.connectorStatus(name).get("connector");
+            return (c instanceof Map<?, ?> m) ? String.valueOf(m.get("state")) : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 
