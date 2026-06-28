@@ -8,7 +8,7 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { projectsApi, connectionsApi } from '../api/client';
-import type { Project, ProjectRequest, ProjectStatus } from '../api/types';
+import type { Project, ProjectRequest, ProjectStatus, EngineSpec } from '../api/types';
 import JobsDrawer from '../components/JobsDrawer';
 import SchemaDrawer from '../components/SchemaDrawer';
 import MappingDrawer from '../components/MappingDrawer';
@@ -68,6 +68,7 @@ export default function Projects() {
     queryFn: () => projectsApi.page({ page, size: PAGE_SIZE, q, status }),
   });
   const connections = useQuery({ queryKey: ['connections'], queryFn: connectionsApi.list });
+  const engines = useQuery({ queryKey: ['engines'], queryFn: connectionsApi.engines });
 
   const create = useMutation({
     mutationFn: (body: ProjectRequest) => projectsApi.create(body),
@@ -108,9 +109,17 @@ export default function Projects() {
     });
   };
 
-  const opts = (type: 'SQLSERVER' | 'POSTGRESQL') =>
-    (connections.data ?? []).filter((c) => c.dbType === type)
-      .map((c) => ({ value: c.id, label: `${c.name} (${c.host})` }));
+  // Any engine can be a source and/or target (#76) — drive the option lists from each engine's
+  // capability flags instead of hard-coding SQL Server → PostgreSQL. Targets exclude source-only
+  // engines (e.g. MongoDB, canSink=false).
+  const engineByType = new Map<string, EngineSpec>((engines.data ?? []).map((e) => [e.type, e]));
+  const connOpts = (capable: (e: EngineSpec) => boolean) =>
+    (connections.data ?? [])
+      .filter((c) => { const e = engineByType.get(c.dbType); return e ? capable(e) : true; })
+      .map((c) => {
+        const e = engineByType.get(c.dbType);
+        return { value: c.id, label: `${c.name} (${e?.displayName ?? c.dbType} — ${c.host})` };
+      });
 
   const columns = [
     { title: 'Name', dataIndex: 'name' },
@@ -233,11 +242,15 @@ export default function Projects() {
             <Input.TextArea rows={2} />
           </Form.Item>
           <Space.Compact block>
-            <Form.Item name="sourceConnectionId" label="Source (SQL Server)" style={{ width: '50%' }}>
-              <Select allowClear placeholder="Select source" options={opts('SQLSERVER')} />
+            <Form.Item name="sourceConnectionId" label="Source" style={{ width: '50%' }}>
+              <Select allowClear placeholder="Select source"
+                loading={connections.isLoading || engines.isLoading}
+                options={connOpts((e) => e.canSource)} />
             </Form.Item>
-            <Form.Item name="targetConnectionId" label="Target (PostgreSQL)" style={{ width: '50%' }}>
-              <Select allowClear placeholder="Select target" options={opts('POSTGRESQL')} />
+            <Form.Item name="targetConnectionId" label="Target" style={{ width: '50%' }}>
+              <Select allowClear placeholder="Select target"
+                loading={connections.isLoading || engines.isLoading}
+                options={connOpts((e) => e.canSink)} />
             </Form.Item>
           </Space.Compact>
 
