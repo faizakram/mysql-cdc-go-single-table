@@ -337,6 +337,44 @@ public class JobService {
         }
     }
 
+    /**
+     * Seed per-table status for a (re)started bulk full load, preserving tables already COMPLETED so the
+     * copy resumes at table granularity instead of replaying every table (#217). Tables that previously
+     * failed or never finished are reset to PENDING; status rows for tables no longer selected are dropped.
+     */
+    private void seedTableStatusResumable(MigrationJob job, List<String> tables) {
+        java.util.Map<String, TableStatus> existing = new java.util.HashMap<>();
+        for (TableStatus ts : tableStatus.findByJobIdOrderByTableName(job.getId())) {
+            existing.put(ts.getTableName().toLowerCase(), ts);
+        }
+        java.util.Set<String> selected = new java.util.HashSet<>();
+        for (String fq : tables) {
+            String[] parts = fq.split("\\.", 2);
+            String schemaName = parts.length == 2 ? parts[0] : "dbo";
+            String tableName = parts.length == 2 ? parts[1] : parts[0];
+            selected.add(tableName.toLowerCase());
+            TableStatus ts = existing.get(tableName.toLowerCase());
+            if (ts != null && "COMPLETED".equals(ts.getStatus())) {
+                continue;   // already done — leave it so the bulk copy skips it on resume
+            }
+            if (ts == null) {
+                ts = new TableStatus();
+                ts.setJobId(job.getId());
+                ts.setSchemaName(schemaName);
+                ts.setTableName(tableName);
+            }
+            ts.setPhase("DATA");
+            ts.setStatus("PENDING");
+            ts.setRowsSynced(0);
+            ts.setError(null);
+            tableStatus.save(ts);
+        }
+        // Drop status rows for tables no longer in the selection so /tables reflects the current set.
+        for (TableStatus ts : existing.values()) {
+            if (!selected.contains(ts.getTableName().toLowerCase())) tableStatus.delete(ts);
+        }
+    }
+
     private void forEachConnector(MigrationJob job, java.util.function.Consumer<String> op) {
         if (job.getSourceConnectorName() != null) op.accept(job.getSourceConnectorName());
         if (job.getSinkConnectorName() != null) op.accept(job.getSinkConnectorName());
@@ -371,7 +409,7 @@ public class JobService {
         job.setError(null);
         project.setStatus(ProjectStatus.ACTIVE);
         projects.save(project);
-        seedTableStatus(job, project);
+        seedTableStatusResumable(job, tables);
         MigrationJob saved = repo.save(job);
         audit.record("JOB_START", job.getProjectId().toString(),
                 java.util.Map.of("jobId", saved.getId().toString(), "mode", "full-load"));
