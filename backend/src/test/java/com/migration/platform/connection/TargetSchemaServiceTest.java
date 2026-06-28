@@ -14,8 +14,9 @@ class TargetSchemaServiceTest {
         // SQL Server / Db2 have no IF NOT EXISTS — the create is guarded by an existence probe.
         assertThat(TargetSchemaService.createDdl(DbType.SQLSERVER, "pascal"))
                 .isEqualTo("CREATE SCHEMA [pascal]");
+        // Db2 requires an AUTHORIZATION clause; authorize the schema to itself.
         assertThat(TargetSchemaService.createDdl(DbType.DB2, "pascal"))
-                .isEqualTo("CREATE SCHEMA \"pascal\"");
+                .isEqualTo("CREATE SCHEMA \"pascal\" AUTHORIZATION \"pascal\"");
     }
 
     @Test

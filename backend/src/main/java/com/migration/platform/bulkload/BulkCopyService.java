@@ -108,6 +108,13 @@ public class BulkCopyService {
         DbType srcType = src.getDbType();
         DbType tgtType = tgt.getDbType();
 
+        // MongoDB isn't reached over JDBC, so it can't be bulk-copied; it requires the CDC/change-streams
+        // path. Fail clearly instead of crashing on jdbc.open.
+        if (srcType == DbType.MONGODB) {
+            throw new IllegalStateException(
+                    "MongoDB source requires the CDC/change-streams path; CDC-free bulk copy is not supported for MongoDB.");
+        }
+
         setJob(req.jobId(), JobStatus.RUNNING, "full-load", null, false);
         log.info("Bulk copy job {}: {} table(s) {} → {}", req.jobId(), req.tables().size(), srcType, tgtType);
 
@@ -122,7 +129,7 @@ public class BulkCopyService {
             for (String fq : req.tables()) {
                 if (isStopped(req.jobId())) throw new Cancelled();
                 String[] parts = fq.split("\\.", 2);
-                String schemaName = parts.length == 2 ? parts[0] : defaultSchema(srcType);
+                String schemaName = parts.length == 2 ? parts[0] : defaultSchema(srcType, src.getUsername());
                 String tableName = parts.length == 2 ? parts[1] : parts[0];
                 totalRows += copyTable(req, sc, tc, srcType, tgtType, schemaName, tableName);
             }
@@ -193,21 +200,35 @@ public class BulkCopyService {
 
     /** Bind one value, converting the cross-dialect cases that {@code setObject} can't handle directly. */
     private void bind(PreparedStatement ps, int idx, Object v, ColumnMapping col, DbType target) throws SQLException {
+        boolean pg = target == DbType.POSTGRESQL;
         if (v == null) {
-            ps.setNull(idx, Types.NULL);
+            // PostgreSQL infers a NULL's type from context and rejects a mismatched JDBC type (e.g. CHAR
+            // null into a uuid column), so use Types.NULL there. The SQL Server driver does the opposite —
+            // Types.NULL makes it declare the batch parameter as varbinary, which can't insert into
+            // datetimeoffset/uuid/etc. — so give it the target column's JDBC type.
+            ps.setNull(idx, pg ? Types.NULL : nullSqlType(col.proposedType()));
             return;
         }
-        // PostgreSQL jsonb/uuid columns won't accept a plain String/foreign object via setObject.
-        if (target == DbType.POSTGRESQL && "JSON".equals(col.semantic())) {
-            ps.setObject(idx, v.toString(), Types.OTHER);
+        // JSON: PostgreSQL jsonb needs Types.OTHER; every other engine renders it as a text/char type.
+        if ("JSON".equals(col.semantic())) {
+            if (pg) ps.setObject(idx, v.toString(), Types.OTHER);
+            else ps.setString(idx, v.toString());
             return;
         }
-        if ("UUID".equals(col.semantic())) {
-            if (target == DbType.POSTGRESQL) {
+        // UUID — by semantic OR by value type (PostgreSQL returns its native uuid as java.util.UUID with
+        // semantic NONE). PostgreSQL target takes a UUID object; every other target stores it as text.
+        if ("UUID".equals(col.semantic()) || v instanceof UUID) {
+            if (pg) {
                 try { ps.setObject(idx, UUID.fromString(v.toString())); return; }
                 catch (IllegalArgumentException ignore) { /* fall through to string */ }
             }
             ps.setString(idx, v.toString());
+            return;
+        }
+        // Booleans: MySQL/Oracle/Db2 render BOOL as TINYINT(1)/NUMBER(1)/SMALLINT — bind as 0/1.
+        if (v instanceof Boolean b
+                && (target == DbType.MYSQL || target == DbType.ORACLE || target == DbType.DB2)) {
+            ps.setInt(idx, b ? 1 : 0);
             return;
         }
         // SQL Server datetimeoffset surfaces as microsoft.sql.DateTimeOffset — unwrap to OffsetDateTime.
@@ -221,7 +242,89 @@ public class BulkCopyService {
                 return;
             }
         }
-        ps.setObject(idx, v);
+        // Cross-engine targets: a value object from the source driver may be unintelligible to a
+        // different target driver. Temporal values are the sharp edge — the SQL Server driver can't
+        // coerce a plain string into datetimeoffset, so hand it a native java.time value instead.
+        // PostgreSQL vendor objects (jsonb/json/etc.) bind as text. (PostgreSQL target keeps natives.)
+        if (!pg) {
+            boolean tz = col.proposedType() != null
+                    && col.proposedType().toUpperCase().matches(".*(DATETIMEOFFSET|TIME ZONE|TIMESTAMPTZ).*");
+            java.time.Instant instant = instantOf(v);
+            if (instant != null) {
+                if (tz && target == DbType.SQLSERVER) {
+                    // The SQL Server driver only binds datetimeoffset reliably via its own
+                    // microsoft.sql.DateTimeOffset type — strings/java.time serialize as varbinary.
+                    ps.setObject(idx, sqlServerDateTimeOffset(instant));
+                    return;
+                }
+                String s = tz ? instant.atOffset(java.time.ZoneOffset.UTC).format(TS_TZ)
+                              : instant.atOffset(java.time.ZoneOffset.UTC).toLocalDateTime().format(TS_LOCAL);
+                ps.setString(idx, s);
+                return;
+            }
+            String temporal = temporalText(v);   // DATE/TIME-only values
+            if (temporal != null) { ps.setString(idx, temporal); return; }
+            if (v.getClass().getName().startsWith("org.postgresql.")) { ps.setString(idx, v.toString()); return; }
+        }
+        // Generic path with a safety net: if the driver rejects the native object (an exotic vendor
+        // type, e.g. oracle.sql.*), degrade to its string form rather than failing the whole table.
+        try {
+            ps.setObject(idx, v);
+        } catch (SQLException e) {
+            ps.setString(idx, v.toString());
+        }
+    }
+
+    private static final java.time.format.DateTimeFormatter TS_TZ =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSS xxx");
+    private static final java.time.format.DateTimeFormatter TS_LOCAL =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSS");
+
+    /** Coarse JDBC type for a NULL bind, from the proposed target type — so the driver types the param. */
+    private int nullSqlType(String proposedType) {
+        String t = proposedType == null ? "" : proposedType.toUpperCase();
+        if (t.contains("DATETIMEOFFSET") || t.contains("TIME ZONE") || t.contains("TIMESTAMPTZ"))
+            return Types.TIMESTAMP_WITH_TIMEZONE;
+        if (t.contains("TIMESTAMP") || t.contains("DATETIME")) return Types.TIMESTAMP;
+        if (t.startsWith("DATE")) return Types.DATE;
+        if (t.startsWith("TIME")) return Types.TIME;
+        if (t.contains("UNIQUEIDENTIFIER") || t.contains("UUID")) return Types.CHAR;
+        if (t.contains("INT")) return Types.INTEGER;
+        if (t.contains("BIT") || t.contains("BOOL")) return Types.BOOLEAN;
+        if (t.contains("NUMERIC") || t.contains("DECIMAL") || t.contains("NUMBER")) return Types.NUMERIC;
+        if (t.contains("FLOAT") || t.contains("REAL") || t.contains("DOUBLE")) return Types.DOUBLE;
+        if (t.contains("BINARY") || t.contains("BLOB") || t.contains("BYTEA")) return Types.VARBINARY;
+        return Types.VARCHAR;
+    }
+
+    /** Instant for a date-time value (carrying an instant), else null (date-only / time-only / non-temporal). */
+    private java.time.Instant instantOf(Object v) {
+        if (v instanceof java.sql.Timestamp ts) return ts.toInstant();
+        if (v instanceof java.time.OffsetDateTime odt) return odt.toInstant();
+        if (v instanceof java.time.Instant i) return i;
+        if (v instanceof java.time.LocalDateTime ldt) return ldt.toInstant(java.time.ZoneOffset.UTC);
+        return null;
+    }
+
+    /** Build a {@code microsoft.sql.DateTimeOffset} (UTC) reflectively — the only datetimeoffset bind the driver accepts. */
+    private Object sqlServerDateTimeOffset(java.time.Instant instant) {
+        try {
+            Class<?> cls = Class.forName("microsoft.sql.DateTimeOffset");
+            return cls.getMethod("valueOf", java.sql.Timestamp.class, int.class)
+                    .invoke(null, java.sql.Timestamp.from(instant), 0);
+        } catch (ReflectiveOperationException e) {
+            // Fallback: ISO string (server-side conversion).
+            return instant.atOffset(java.time.ZoneOffset.UTC).format(TS_TZ);
+        }
+    }
+
+    /** Render a date-only / time-only value as a server-parseable string, else null. */
+    private String temporalText(Object v) {
+        if (v instanceof java.sql.Date d) return d.toString();
+        if (v instanceof java.time.LocalDate ld) return ld.toString();
+        if (v instanceof java.sql.Time t) return t.toString();
+        if (v instanceof java.time.LocalTime lt) return lt.toString();
+        return null;
     }
 
     private String joinQuoted(DbType t, List<ColumnMapping> cols, java.util.function.Function<ColumnMapping, String> name) {
@@ -229,8 +332,16 @@ public class BulkCopyService {
                 .reduce((a, b) -> a + ", " + b).orElse("");
     }
 
-    private String defaultSchema(DbType t) {
-        return t == DbType.SQLSERVER ? "dbo" : "public";
+    /** Default schema for an unqualified source table name, per engine. */
+    private String defaultSchema(DbType t, String username) {
+        return switch (t) {
+            case SQLSERVER -> "dbo";
+            case POSTGRESQL -> "public";
+            // Oracle/Db2 default schema is the connecting user (uppercased).
+            case ORACLE, DB2 -> username == null ? "public" : username.toUpperCase();
+            // MySQL has no schema layer; qualified() omits the schema segment for MySQL anyway.
+            default -> "public";
+        };
     }
 
     // ---- status persistence (each call its own transaction; safe from the worker thread) ----
