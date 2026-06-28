@@ -20,7 +20,7 @@ public final class ValidationDtos {
     ) {}
 
     public record ValidationReport(
-            int tables, int passed, int failed,
+            int tables, int passed, int syncing, int failed,
             List<TableValidation> results
     ) {}
 
@@ -31,7 +31,7 @@ public final class ValidationDtos {
      */
     public record ValidationRunDto(
             UUID id, UUID projectId, String status,
-            int totalTables, int completedTables, int passed, int failed,
+            int totalTables, int completedTables, int passed, int syncing, int failed,
             String error,
             OffsetDateTime startedAt, OffsetDateTime finishedAt,
             List<TableValidation> results

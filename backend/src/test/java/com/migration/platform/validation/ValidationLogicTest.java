@@ -39,4 +39,29 @@ class ValidationLogicTest {
         assertThat(v.status()).isEqualTo("FAIL");
         assertThat(v.issues()).anyMatch(i -> i.startsWith("EXTRA_ROWS"));
     }
+
+    @Test
+    void targetBehindOnCountOnlyIsSyncingNotFail() {
+        // Live replication lag: target a few rows behind, every structural signal clean (#166).
+        TableValidation v = ValidationLogic.assess("dbo", "orders", 1000, 998, 0, 0, 0, 0, 500, 100, 50);
+        assertThat(v.status()).isEqualTo("SYNCING");
+        assertThat(v.issues()).anyMatch(i -> i.startsWith("TARGET_BEHIND"));
+        assertThat(v.issues()).noneMatch(i -> i.startsWith("ROW_COUNT_MISMATCH"));
+    }
+
+    @Test
+    void missingSampledRowsFailEvenWhenOnlyCountBehind() {
+        // Same count gap, but sampled source rows are genuinely absent on the target → real FAIL.
+        TableValidation v = ValidationLogic.assess("dbo", "orders", 1000, 998, 0, 0, 2, 0, -1, -1, -1);
+        assertThat(v.status()).isEqualTo("FAIL");
+        assertThat(v.issues()).anyMatch(i -> i.startsWith("MISSING_ROWS"));
+    }
+
+    @Test
+    void targetAheadIsAlwaysFail() {
+        // Target has rows the source doesn't (lost delete / over-replication) → never SYNCING.
+        TableValidation v = ValidationLogic.assess("dbo", "orders", 1000, 1010, 0, 0, 0, 10, -1, -1, -1);
+        assertThat(v.status()).isEqualTo("FAIL");
+        assertThat(v.issues()).anyMatch(i -> i.startsWith("EXTRA_ROWS"));
+    }
 }

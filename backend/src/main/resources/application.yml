@@ -69,6 +69,11 @@ platform:
     # When true, source/target row counts use fast engine catalog statistics (e.g. PostgreSQL
     # reltuples) instead of exact COUNT(*) — much cheaper on huge tables, but approximate.
     approximate-counts: ${VALIDATION_APPROXIMATE_COUNTS:false}
+    # When sampled source rows look missing on the target, wait this long and re-check those exact
+    # keys before failing — under live load the freshest rows are simply in flight (CDC lag) and
+    # arrive within the settle window, so they resolve to SYNCING instead of a false FAIL (#166).
+    # 0 disables the re-check. Default 4s.
+    recheck-settle-ms: ${VALIDATION_RECHECK_SETTLE_MS:4000}
   alerts:
     # Optional Slack/Teams/custom incoming-webhook URL for notifications (#52). Empty = log only.
     webhook-url: ${ALERTS_WEBHOOK_URL:}

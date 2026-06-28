@@ -282,22 +282,30 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
                 {current && (
                   <>
                     <Row gutter={16} style={{ marginBottom: 8 }}>
-                      <Col span={6}>
+                      <Col span={5}>
                         <Statistic title="Tables" value={`${current.completedTables}/${current.totalTables}`} />
                       </Col>
-                      <Col span={6}>
+                      <Col span={5}>
                         <Statistic title="Passed" value={current.passed}
                           valueStyle={{ color: '#3f8600' }} prefix={<CheckCircleOutlined />} />
                       </Col>
-                      <Col span={6}>
+                      <Col span={5}>
+                        <Statistic title="Syncing" value={current.syncing}
+                          valueStyle={{ color: current.syncing > 0 ? '#1677ff' : undefined }} />
+                      </Col>
+                      <Col span={5}>
                         <Statistic title="Failed" value={current.failed}
                           valueStyle={{ color: current.failed > 0 ? '#cf1322' : undefined }} />
                       </Col>
-                      <Col span={6}>
+                      <Col span={4}>
                         <Statistic title="Status" value={current.status}
                           valueStyle={{ color: current.status === 'FAILED' ? '#cf1322' : undefined }} />
                       </Col>
                     </Row>
+                    {current.syncing > 0 && current.failed === 0 && (
+                      <Alert type="info" showIcon style={{ marginBottom: 12 }}
+                        message={`${current.syncing} table(s) still syncing — the target is a few rows behind the source (live CDC lag), not a data error. Pause writes and re-check for a clean pass.`} />
+                    )}
                     <Progress
                       percent={current.totalTables ? Math.round((current.completedTables / current.totalTables) * 100) : 0}
                       status={current.status === 'FAILED' ? 'exception' : RUNNING(current.status) ? 'active' : 'success'}
@@ -322,7 +330,9 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
                         rowExpandable: (r) => r.issues?.length > 0,
                         expandedRowRender: (r) => (
                           <Space direction="vertical" size={2}>
-                            {r.issues.map((i, idx) => <Typography.Text key={idx} type="danger">• {i}</Typography.Text>)}
+                            {r.issues.map((i, idx) => (
+                              <Typography.Text key={idx} type={r.status === 'SYNCING' ? 'secondary' : 'danger'}>• {i}</Typography.Text>
+                            ))}
                           </Space>
                         ),
                       }}
@@ -348,7 +358,10 @@ export default function ValidationDrawer({ project, onClose }: { project: Projec
                         },
                         {
                           title: 'Status', dataIndex: 'status',
-                          render: (s: string) => <Tag color={s === 'PASS' ? 'green' : s === 'FAIL' ? 'red' : 'default'}>{s}</Tag>,
+                          render: (s: string) => {
+                            const color = s === 'PASS' ? 'green' : s === 'SYNCING' ? 'processing' : s === 'FAIL' ? 'red' : 'default';
+                            return <Tag color={color}>{s}</Tag>;
+                          },
                         },
                       ]}
                     />}

@@ -308,7 +308,7 @@ export interface TableValidation {
   cdcInserts: number; cdcUpdates: number; cdcDeletes: number;
   status: string; issues: string[];
 }
-export interface ValidationReport { tables: number; passed: number; failed: number; results: TableValidation[]; }
+export interface ValidationReport { tables: number; passed: number; syncing: number; failed: number; results: TableValidation[]; }
 
 // Async, job-based validation run (#150). Counters update as the run streams in.
 export type ValidationRunStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
@@ -319,6 +319,7 @@ export interface ValidationRun {
   totalTables: number;
   completedTables: number;
   passed: number;
+  syncing: number;
   failed: number;
   error: string | null;
   startedAt: string;

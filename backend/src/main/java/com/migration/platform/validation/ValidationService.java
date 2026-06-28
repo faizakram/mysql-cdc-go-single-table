@@ -28,6 +28,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -50,6 +51,8 @@ public class ValidationService {
     private static final Logger log = LoggerFactory.getLogger(ValidationService.class);
     /** Max sampled keys bound per target IN-query — keeps under engine parameter limits while batching. */
     private static final int KEY_CHUNK = 500;
+    /** Max settle windows to re-check "missing" sampled keys before deciding they're genuinely lost (#166). */
+    private static final int MISSING_RECHECKS = 3;
 
     private final ProjectRepository projects;
     private final ConnectionRepository connections;
@@ -121,7 +124,7 @@ public class ValidationService {
         run.setStatus("RUNNING");
         run = runRepo.save(run);
 
-        int passed = 0, failed = 0, completed = 0;
+        int passed = 0, failed = 0, syncing = 0, completed = 0;
         try (Connection sc = jdbc.open(src, crypto.decrypt(src.getPasswordEnc()));
              Connection tc = jdbc.open(tgt, crypto.decrypt(tgt.getPasswordEnc()))) {
             for (String fq : selectedTables(p)) {
@@ -133,7 +136,14 @@ public class ValidationService {
                 resultRepo.save(ValidationResult.from(runId, tv));
 
                 completed++;
-                if ("PASS".equals(tv.status())) passed++; else failed++;
+                // SYNCING (target behind, in-flight) is neither a pass nor a failure — keeping it out
+                // of the failed tally is the #166 fix that stops live replication lag reading as a fault.
+                if (ValidationLogic.PASS.equals(tv.status())) passed++;
+                else if (ValidationLogic.SYNCING.equals(tv.status())) syncing++;
+                else failed++;
+                if (ValidationLogic.FAIL.equals(tv.status())) {
+                    log.info("Validation run {} — {}.{} FAIL: {}", runId, schema, table, tv.issues());
+                }
                 // Persist progress after each table so the UI's poll sees it stream in.
                 run.setCompletedTables(completed);
                 run.setPassed(passed);
@@ -148,6 +158,8 @@ public class ValidationService {
         }
         run.setFinishedAt(OffsetDateTime.now());
         runRepo.save(run);
+        log.info("Validation run {} {}: {} passed, {} syncing, {} failed of {} tables",
+                runId, run.getStatus(), passed, syncing, failed, completed);
     }
 
     private void fail(ValidationRun run, String message) {
@@ -180,7 +192,7 @@ public class ValidationService {
 
     private ValidationRunDto toDto(ValidationRun run) {
         return new ValidationRunDto(run.getId(), run.getProjectId(), run.getStatus(),
-                run.getTotalTables(), run.getCompletedTables(), run.getPassed(), run.getFailed(),
+                run.getTotalTables(), run.getCompletedTables(), run.getPassed(), syncing(run), run.getFailed(),
                 run.getError(), run.getStartedAt(), run.getFinishedAt(), List.of());
     }
 
@@ -188,8 +200,13 @@ public class ValidationService {
         List<TableValidation> results = resultRepo.findByRunIdOrderBySchemaNameAscTableNameAsc(run.getId())
                 .stream().map(ValidationResult::toDto).toList();
         return new ValidationRunDto(run.getId(), run.getProjectId(), run.getStatus(),
-                run.getTotalTables(), run.getCompletedTables(), run.getPassed(), run.getFailed(),
+                run.getTotalTables(), run.getCompletedTables(), run.getPassed(), syncing(run), run.getFailed(),
                 run.getError(), run.getStartedAt(), run.getFinishedAt(), results);
+    }
+
+    /** SYNCING tables aren't stored in a counter — they're the completed tables that are neither pass nor fail. */
+    private int syncing(ValidationRun run) {
+        return Math.max(0, run.getCompletedTables() - run.getPassed() - run.getFailed());
     }
 
     // ---- Synchronous report (legacy / CSV export) -------------------------------------------
@@ -219,9 +236,10 @@ public class ValidationService {
         } catch (Exception e) {
             throw new IllegalArgumentException("Validation failed: " + e.getMessage());
         }
-        int passed = (int) results.stream().filter(r -> "PASS".equals(r.status())).count();
-        int failed = (int) results.stream().filter(r -> !"PASS".equals(r.status())).count();
-        return new ValidationReport(results.size(), passed, failed, results);
+        int passed = (int) results.stream().filter(r -> ValidationLogic.PASS.equals(r.status())).count();
+        int syncing = (int) results.stream().filter(r -> ValidationLogic.SYNCING.equals(r.status())).count();
+        int failed = results.size() - passed - syncing;   // FAIL + ERROR
+        return new ValidationReport(results.size(), passed, syncing, failed, results);
     }
 
     private TableValidation validateTable(Connection sc, Connection tc, DbType srcEngine, DbType tgtEngine,
@@ -244,6 +262,7 @@ public class ValidationService {
                             "SELECT COUNT(*) FROM " + tgtTable)
                     : scalar(tc, "SELECT COUNT(*) FROM " + tgtTable + softFilter);
 
+            long extra = Math.max(0, targetRows - sourceRows);
             String pk = primaryKey(sc, schema, table);
 
             long nullPk = 0, dupKeys = 0, missing = 0;
@@ -252,9 +271,37 @@ public class ValidationService {
                 nullPk = scalar(tc, "SELECT COUNT(*) FROM " + tgtTable + " WHERE " + tgtPk + " IS NULL");
                 dupKeys = scalar(tc, "SELECT COALESCE(SUM(c-1),0) FROM (SELECT " + tgtPk
                         + " AS k, COUNT(*) c FROM " + tgtTable + " GROUP BY " + tgtPk + " HAVING COUNT(*)>1) d");
-                missing = missingSample(sc, tc, srcEngine, schema, table, pk, tgtTable, tgtPk);
+
+                // Key-level discrepancies in BOTH directions (#166):
+                //  - missing: sampled source keys absent on the target (insert lag, or real loss).
+                //  - extra:   sampled target keys absent on the source (delete lag, or real phantom).
+                // Under live load both are dominated by in-flight CDC lag. Re-check the exact keys over
+                // a few settle windows: lag drains (→ SYNCING); only genuinely missing/phantom keys
+                // persist to the end (→ FAIL). Skip the wait when there are no key discrepancies.
+                Set<String> missingKeys = missingSampleKeys(sc, tc, srcEngine, tgtEngine, schema, table, pk, tgtTable, tgtPk);
+                // Extra (target-only) is a HARD-delete concern: under SOFT delete the target keeps
+                // deleted rows on purpose, so they're legitimately target-only — keep the count-based
+                // (soft-filtered) extra there instead of flagging those keys.
+                Set<String> extraKeys = softDelete
+                        ? new LinkedHashSet<>()
+                        : extraSampleKeys(sc, tc, srcEngine, tgtEngine, schema, table, pk, tgtTable, tgtPk);
+                boolean clean = nullPk == 0 && dupKeys == 0;
+                if (clean && props.recheckSettleMs() > 0 && (!missingKeys.isEmpty() || !extraKeys.isEmpty())) {
+                    for (int attempt = 0; attempt < MISSING_RECHECKS && (!missingKeys.isEmpty() || !extraKeys.isEmpty()); attempt++) {
+                        try { Thread.sleep(props.recheckSettleMs()); }
+                        catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                        // missing resolves when the key appears on the target.
+                        if (!missingKeys.isEmpty()) missingKeys = absentIn(tc, tgtEngine, tgtTable, tgtPk, missingKeys);
+                        // extra resolves when the key leaves the target (the source delete propagated):
+                        // keep only those still present on the target.
+                        if (!extraKeys.isEmpty()) extraKeys.removeAll(absentIn(tc, tgtEngine, tgtTable, tgtPk, extraKeys));
+                    }
+                }
+                missing = missingKeys.size();
+                // For HARD delete, key-confirmed phantoms override the raw count diff so insert-lag
+                // can't mask, nor delete-lag inflate, the "extra" signal. SOFT keeps count-based extra.
+                if (!softDelete) extra = extraKeys.size();
             }
-            long extra = Math.max(0, targetRows - sourceRows);
             long[] ops = cdcOpCounts(sc, srcEngine, schema, table);
             return ValidationLogic.assess(schema, table, sourceRows, targetRows, nullPk, dupKeys, missing, extra,
                     ops[0], ops[1], ops[2]);
@@ -310,51 +357,80 @@ public class ValidationService {
         }
     }
 
-    /**
-     * Bounded missing-row check: sample source primary keys, count how many are absent on the target.
-     *
-     * <p>Set-based (#151): instead of one {@code COUNT(*)} per sampled key (up to the configured
-     * sample size round-trips per table — the dominant cost at scale), the sampled keys are matched in
-     * a handful of chunked {@code IN (...)} queries. Key comparison keeps the original normalization
-     * ({@code lower(cast(pk AS text))} on both sides) so results are identical to the per-key loop.
-     */
-    private long missingSample(Connection sc, Connection tc, DbType srcEngine, String schema, String table,
-                               String pk, String tgtTable, String tgtPk) {
+    /** Sampled source PKs that are absent on the target — the "missing" candidates. */
+    private Set<String> missingSampleKeys(Connection sc, Connection tc, DbType srcEngine, DbType tgtEngine,
+                                          String schema, String table, String pk, String tgtTable, String tgtPk) {
         try {
-            int sampleSize = props.missingSampleSize();
-            // Sample distinct source keys (PKs are unique, but dedupe defensively).
-            Set<String> keys = new LinkedHashSet<>();
-            String topN = srcEngine == DbType.SQLSERVER ? "TOP (" + sampleSize + ") " : "";
-            String limit = srcEngine == DbType.SQLSERVER ? "" : " LIMIT " + sampleSize;
-            String q = "SELECT " + topN + pkRef(srcEngine, pk) + " FROM " + sourceQualify(srcEngine, schema, table) + limit;
-            try (Statement st = sc.createStatement()) {
-                applyTimeout(st);
-                try (ResultSet rs = st.executeQuery(q)) {
-                    while (rs.next()) { Object v = rs.getObject(1); if (v != null) keys.add(v.toString()); }
-                }
-            }
-            if (keys.isEmpty()) return 0;
-
-            // Count, per chunk, how many sampled keys are present on the target; missing = sampled - present.
-            long present = 0;
-            List<String> sample = new ArrayList<>(keys);
-            for (int from = 0; from < sample.size(); from += KEY_CHUNK) {
-                List<String> chunk = sample.subList(from, Math.min(from + KEY_CHUNK, sample.size()));
-                String placeholders = String.join(",", java.util.Collections.nCopies(chunk.size(), "lower(?)"));
-                String sql = "SELECT COUNT(DISTINCT lower(cast(" + tgtPk + " AS text))) FROM " + tgtTable
-                        + " WHERE lower(cast(" + tgtPk + " AS text)) IN (" + placeholders + ")";
-                try (PreparedStatement ps = tc.prepareStatement(sql)) {
-                    applyTimeout(ps);
-                    for (int i = 0; i < chunk.size(); i++) ps.setString(i + 1, chunk.get(i));
-                    try (ResultSet rs = ps.executeQuery()) {
-                        if (rs.next()) present += rs.getLong(1);
-                    }
-                }
-            }
-            return Math.max(0, sample.size() - present);
+            Set<String> keys = sampleKeys(sc, srcEngine, sourceQualify(srcEngine, schema, table), pkRef(srcEngine, pk));
+            return absentIn(tc, tgtEngine, tgtTable, tgtPk, keys);
         } catch (Exception e) {
-            return 0;   // best-effort; non-fatal
+            return new LinkedHashSet<>();   // best-effort; non-fatal
         }
+    }
+
+    /** Sampled target PKs that are absent on the source — the "extra" (target-only) candidates. */
+    private Set<String> extraSampleKeys(Connection sc, Connection tc, DbType srcEngine, DbType tgtEngine,
+                                        String schema, String table, String pk, String tgtTable, String tgtPk) {
+        try {
+            Set<String> keys = sampleKeys(tc, tgtEngine, tgtTable, tgtPk);
+            return absentIn(sc, srcEngine, sourceQualify(srcEngine, schema, table), pkRef(srcEngine, pk), keys);
+        } catch (Exception e) {
+            return new LinkedHashSet<>();   // best-effort; non-fatal
+        }
+    }
+
+    /** Sample up to {@code missingSampleSize} distinct PK values from a table on the given engine. */
+    private Set<String> sampleKeys(Connection c, DbType engine, String qualifiedTable, String pkRef) throws Exception {
+        int n = props.missingSampleSize();
+        boolean top = engine == DbType.SQLSERVER || engine == DbType.ORACLE;
+        String q = "SELECT " + (top ? "TOP (" + n + ") " : "") + pkRef + " FROM " + qualifiedTable
+                + (top ? "" : " LIMIT " + n);
+        Set<String> keys = new LinkedHashSet<>();
+        try (Statement st = c.createStatement()) {
+            applyTimeout(st);
+            try (ResultSet rs = st.executeQuery(q)) {
+                while (rs.next()) { Object v = rs.getObject(1); if (v != null) keys.add(v.toString()); }
+            }
+        }
+        return keys;
+    }
+
+    /**
+     * Of {@code keys}, which are absent in {@code table} on {@code conn} — checked set-based via chunked
+     * {@code IN (...)} queries with engine-aware {@code lower(cast(pk AS text))} normalization on both
+     * sides. Works in either direction (source→target for missing, target→source for extra).
+     */
+    private Set<String> absentIn(Connection conn, DbType engine, String table, String quotedPk, Set<String> keys) throws Exception {
+        if (keys.isEmpty()) return new LinkedHashSet<>();
+        String castExpr = textCast(engine, quotedPk);
+        Set<String> present = new HashSet<>();
+        List<String> all = new ArrayList<>(keys);
+        for (int from = 0; from < all.size(); from += KEY_CHUNK) {
+            List<String> chunk = all.subList(from, Math.min(from + KEY_CHUNK, all.size()));
+            String placeholders = String.join(",", java.util.Collections.nCopies(chunk.size(), "lower(?)"));
+            String sql = "SELECT " + castExpr + " FROM " + table + " WHERE " + castExpr + " IN (" + placeholders + ")";
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                applyTimeout(ps);
+                for (int i = 0; i < chunk.size(); i++) ps.setString(i + 1, chunk.get(i));
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) { String k = rs.getString(1); if (k != null) present.add(k); }
+                }
+            }
+        }
+        Set<String> absent = new LinkedHashSet<>();
+        for (String k : keys) if (!present.contains(k.toLowerCase(java.util.Locale.ROOT))) absent.add(k);
+        return absent;
+    }
+
+    /** Engine-appropriate {@code lower(cast(<col> AS <text-type>))} for cross-engine key comparison. */
+    private static String textCast(DbType engine, String col) {
+        String type = switch (engine) {
+            case SQLSERVER, DB2 -> "varchar(4000)";
+            case MYSQL -> "char";
+            case ORACLE -> "varchar2(4000)";
+            default -> "text";   // PostgreSQL
+        };
+        return "lower(cast(" + col + " AS " + type + "))";
     }
 
     /**

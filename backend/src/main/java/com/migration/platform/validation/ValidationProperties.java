@@ -15,9 +15,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *                            on multi-million-row tables, at the cost of being approximate.
  */
 @ConfigurationProperties(prefix = "platform.validation")
-public record ValidationProperties(int queryTimeoutSeconds, int missingSampleSize, boolean approximateCounts) {
+public record ValidationProperties(int queryTimeoutSeconds, int missingSampleSize, boolean approximateCounts,
+                                   long recheckSettleMs) {
     public ValidationProperties {
         if (queryTimeoutSeconds < 0) queryTimeoutSeconds = 0;
         if (missingSampleSize < 1) missingSampleSize = 1000;
+        if (recheckSettleMs < 0) recheckSettleMs = 0;
     }
 }
