@@ -14,6 +14,9 @@ services:
       MSSQL_SA_PASSWORD: "Str0ngP@ssw0rd!"
       MSSQL_PID: Developer
       MSSQL_AGENT_ENABLED: "true"   # required: CDC capture/cleanup run as SQL Agent jobs
+      # Cap SQL Server memory so a heavy snapshot (100s of CDC tables) can't balloon and get the
+      # container OOM-killed by the Docker VM (#215). Keep headroom for the other containers.
+      MSSQL_MEMORY_LIMIT_MB: "2048"
     ports:
       - "1433:1433"
     volumes:

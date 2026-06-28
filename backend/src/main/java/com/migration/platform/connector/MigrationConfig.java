@@ -20,7 +20,8 @@ public record MigrationConfig(
         int snapshotMaxThreads,   // parallel snapshot workers (#27)
         int snapshotFetchSize,    // snapshot row fetch size (#27)
         NamingStrategy namingStrategy,  // identifier naming on the target (#84); default PRESERVE
-        String errorTolerance     // sink errors: all (skip bad rows to DLQ, keep streaming) | none (fail fast) (#176)
+        String errorTolerance,    // sink errors: all (skip bad rows to DLQ, keep streaming) | none (fail fast) (#176)
+        int sinkBatchSize         // JDBC sink rows per batch — higher = faster bulk apply (#215)
 ) {
     public static MigrationConfig from(Map<String, Object> cfg, String projectName) {
         cfg = cfg == null ? Map.of() : cfg;
@@ -34,10 +35,12 @@ public record MigrationConfig(
                 strList(cfg, "jsonColumns"),
                 intVal(cfg, "tasksMax", 1),
                 str(cfg, "schemaEvolution", "basic"),
-                Math.max(1, intVal(cfg, "snapshotMaxThreads", 1)),
-                Math.max(1, intVal(cfg, "snapshotFetchSize", 2000)),
+                // Throughput defaults tuned for scale (#215): parallel snapshot workers + larger fetch.
+                Math.max(1, intVal(cfg, "snapshotMaxThreads", 4)),
+                Math.max(1, intVal(cfg, "snapshotFetchSize", 10000)),
                 NamingStrategy.parse(str(cfg, "namingStrategy", "preserve")),
-                "none".equalsIgnoreCase(str(cfg, "errorTolerance", "all")) ? "none" : "all"
+                "none".equalsIgnoreCase(str(cfg, "errorTolerance", "all")) ? "none" : "all",
+                Math.max(1, intVal(cfg, "sinkBatchSize", 2000))
         );
     }
 

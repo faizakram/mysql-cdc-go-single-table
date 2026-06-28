@@ -365,10 +365,7 @@ public class BulkCopyService {
     }
 
     private void markTable(UUID jobId, String schemaName, String tableName, String status, long rows, String error) {
-        List<TableStatus> all = tableStatus.findByJobIdOrderByTableName(jobId);
-        TableStatus ts = all.stream()
-                .filter(t -> tableName.equalsIgnoreCase(t.getTableName()))
-                .findFirst()
+        TableStatus ts = tableStatus.findByJobIdAndTableNameIgnoreCase(jobId, tableName)
                 .orElseGet(() -> {
                     TableStatus n = new TableStatus();
                     n.setJobId(jobId);

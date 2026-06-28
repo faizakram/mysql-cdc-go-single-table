@@ -33,6 +33,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Advanced post-migration validation (#96): beyond row-count + checksum (#49), it checks for
@@ -53,6 +56,8 @@ public class ValidationService {
     private static final int KEY_CHUNK = 500;
     /** Max settle windows to re-check "missing" sampled keys before deciding they're genuinely lost (#166). */
     private static final int MISSING_RECHECKS = 3;
+    /** Tables validated concurrently (#211). Bounded below the JDBC pool size so connections aren't starved. */
+    private static final int VALIDATION_THREADS = 6;
 
     private final ProjectRepository projects;
     private final ConnectionRepository connections;
@@ -124,17 +129,38 @@ public class ValidationService {
         run.setStatus("RUNNING");
         run = runRepo.save(run);
 
+        // Validate tables concurrently (#211): exact counts/sampling and the settle-window waits now run
+        // in parallel instead of serially, turning an O(n) wall-clock into ~O(n / threads). Each task
+        // takes its own pooled source+target connection (#212); validateTable never throws (it returns an
+        // ERROR result), so one bad table can't abort the run. The collector below stays single-threaded,
+        // so result/run persistence touches JPA from one thread only.
+        List<String> tables = selectedTables(p);
+        int threads = Math.max(1, Math.min(VALIDATION_THREADS, tables.size()));
+        String srcPw = crypto.decrypt(src.getPasswordEnc());
+        String tgtPw = crypto.decrypt(tgt.getPasswordEnc());
+        ExecutorService exec = Executors.newFixedThreadPool(threads, r -> {
+            Thread t = new Thread(r, "validate"); t.setDaemon(true); return t;
+        });
+        ExecutorCompletionService<TableValidation> ecs = new ExecutorCompletionService<>(exec);
+        for (String fq : tables) {
+            String[] parts = fq.split("\\.", 2);
+            String schema = parts.length == 2 ? parts[0] : "dbo";
+            String table = parts.length == 2 ? parts[1] : parts[0];
+            ecs.submit(() -> {
+                try (Connection sc = jdbc.open(src, srcPw);
+                     Connection tc = jdbc.open(tgt, tgtPw)) {
+                    return validateTable(sc, tc, src.getDbType(), tgt.getDbType(), schema, table, mc, softDelete);
+                } catch (Exception e) {
+                    return new TableValidation(schema, table, -1, -1, 0, 0, 0, 0, -1, -1, -1, "ERROR", List.of(e.getMessage()));
+                }
+            });
+        }
+
         int passed = 0, failed = 0, syncing = 0, completed = 0;
-        try (Connection sc = jdbc.open(src, crypto.decrypt(src.getPasswordEnc()));
-             Connection tc = jdbc.open(tgt, crypto.decrypt(tgt.getPasswordEnc()))) {
-            for (String fq : selectedTables(p)) {
-                String[] parts = fq.split("\\.", 2);
-                String schema = parts.length == 2 ? parts[0] : "dbo";
-                String table = parts.length == 2 ? parts[1] : parts[0];
-
-                TableValidation tv = validateTable(sc, tc, src.getDbType(), tgt.getDbType(), schema, table, mc, softDelete);
+        try {
+            for (int i = 0; i < tables.size(); i++) {
+                TableValidation tv = ecs.take().get();   // next finished table (any order)
                 resultRepo.save(ValidationResult.from(runId, tv));
-
                 completed++;
                 // SYNCING (target behind, in-flight) is neither a pass nor a failure — keeping it out
                 // of the failed tally is the #166 fix that stops live replication lag reading as a fault.
@@ -142,20 +168,27 @@ public class ValidationService {
                 else if (ValidationLogic.SYNCING.equals(tv.status())) syncing++;
                 else failed++;
                 if (ValidationLogic.FAIL.equals(tv.status())) {
-                    log.info("Validation run {} — {}.{} FAIL: {}", runId, schema, table, tv.issues());
+                    log.info("Validation run {} — {}.{} FAIL: {}", runId, tv.schema(), tv.table(), tv.issues());
                 }
-                // Persist progress after each table so the UI's poll sees it stream in.
-                run.setCompletedTables(completed);
-                run.setPassed(passed);
-                run.setFailed(failed);
-                run = runRepo.save(run);
+                // Persist progress periodically so the UI poll streams it in, without an UPDATE per table.
+                if (completed % 5 == 0 || completed == tables.size()) {
+                    run.setCompletedTables(completed);
+                    run.setPassed(passed);
+                    run.setFailed(failed);
+                    run = runRepo.save(run);
+                }
             }
             run.setStatus("COMPLETED");
         } catch (Exception e) {
             log.warn("Validation run {} failed: {}", runId, e.getMessage());
             run.setStatus("FAILED");
             run.setError(e.getMessage());
+        } finally {
+            exec.shutdownNow();
         }
+        run.setCompletedTables(completed);
+        run.setPassed(passed);
+        run.setFailed(failed);
         run.setFinishedAt(OffsetDateTime.now());
         runRepo.save(run);
         log.info("Validation run {} {}: {} passed, {} syncing, {} failed of {} tables",

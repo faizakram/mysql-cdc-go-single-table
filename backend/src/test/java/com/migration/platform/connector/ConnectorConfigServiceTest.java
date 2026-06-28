@@ -287,10 +287,11 @@ class ConnectorConfigServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void defaultsSchemaEvolutionBasicAndSingleSnapshotThread() {
+    void defaultsSchemaEvolutionBasicAndParallelSnapshot() {
         MigrationProject p = project(new HashMap<>());
         Map<String, Object> source = (Map<String, Object>) svc.sourceConnector(p, src(), "pw").get("config");
-        assertThat(source).containsEntry("snapshot.max.threads", "1");
+        // Default snapshot parallelism raised 1→4 for DMS-class throughput (#215).
+        assertThat(source).containsEntry("snapshot.max.threads", "4");
         Map<String, Object> sink = (Map<String, Object>) svc.sinkConnector(p, tgt(), "pw", DbType.SQLSERVER).get("config");
         assertThat(sink).containsEntry("schema.evolution", "basic");
     }

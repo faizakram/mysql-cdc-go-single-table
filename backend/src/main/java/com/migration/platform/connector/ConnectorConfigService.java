@@ -117,6 +117,8 @@ public class ConnectorConfigService {
 
         cfg.put("table.name.format", schemaQualified ? mc.targetSchema() + ".${topic}" : "${topic}");
         cfg.put("insert.mode", "upsert");
+        // Larger JDBC sink batches = faster bulk apply at scale (#215). Default 500 in Debezium; tunable.
+        cfg.put("batch.size", String.valueOf(mc.sinkBatchSize()));
         cfg.put("delete.enabled", String.valueOf(hard));
         if (hard) {
             // Collapse multiple events for the same primary key within a sink batch to their final
