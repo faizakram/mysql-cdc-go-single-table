@@ -136,7 +136,9 @@ public class TargetSchemaService {
         String id = quote(t, schema);
         return switch (t) {
             case POSTGRESQL -> "CREATE SCHEMA IF NOT EXISTS " + id;
-            case SQLSERVER, DB2 -> "CREATE SCHEMA " + id;
+            case SQLSERVER -> "CREATE SCHEMA " + id;
+            // Db2 CREATE SCHEMA requires an AUTHORIZATION clause; authorize the schema to itself.
+            case DB2 -> "CREATE SCHEMA " + id + " AUTHORIZATION " + id;
             default -> throw new IllegalStateException("unmanaged engine: " + t);
         };
     }
