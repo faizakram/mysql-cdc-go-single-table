@@ -26,30 +26,30 @@ public abstract class SnakeCaseTransform<R extends ConnectRecord<R>> implements 
     @Override
     public R apply(R record) {
         // Transform topic name (table) per the configured naming strategy.
-        final String originalTopic = record.topic();
-        final String snakeCaseTopic = transformName(originalTopic);
+        final String snakeCaseTopic = transformName(record.topic());
 
         // Determine which schema and value to transform based on subclass
         final Schema originalSchema = getSchema(record);
         final Object originalValue = getValue(record);
-        
-        if (originalValue == null || originalSchema == null) {
-            // No transformation needed
+
+        // No schema to rename (schemaless record) — just carry the renamed topic.
+        if (originalSchema == null) {
             return updateRecord(record, snakeCaseTopic, originalSchema, originalValue);
         }
 
-        // Build new schema with snake_case field names
+        // Always rename the SCHEMA field names — even when the value is null. Delete tombstones (HARD
+        // delete) arrive with a null value but a populated value schema; if the schema isn't renamed, the
+        // JDBC sink compares the original-cased schema against the renamed (e.g. snake_case) target table,
+        // decides columns are "missing", and tries to ALTER-ADD them — which fails for NOT NULL columns
+        // ("field 'X' is not optional but has no default value"). Renaming the schema keeps the tombstone's
+        // columns aligned with the table so the sink just deletes by key.
         final Schema updatedSchema = makeUpdatedSchema(originalSchema);
-        
-        // Convert the value to new schema
-        final Object updatedValue;
-        if (originalValue instanceof Struct) {
-            updatedValue = convertStruct((Struct) originalValue, updatedSchema);
-        } else {
-            updatedValue = originalValue;
-        }
 
-        // Return new record with snake_case topic and schema
+        // A null value (tombstone) stays null under the renamed schema; a Struct is converted.
+        final Object updatedValue = (originalValue instanceof Struct)
+                ? convertStruct((Struct) originalValue, updatedSchema)
+                : originalValue;
+
         return updateRecord(record, snakeCaseTopic, updatedSchema, updatedValue);
     }
 
