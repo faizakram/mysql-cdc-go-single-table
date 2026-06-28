@@ -13,6 +13,7 @@ import JobsDrawer from '../components/JobsDrawer';
 import SchemaDrawer from '../components/SchemaDrawer';
 import MappingDrawer from '../components/MappingDrawer';
 import ValidationDrawer from '../components/ValidationDrawer';
+import LiveStreamDrawer from '../components/LiveStreamDrawer';
 import ConfigDrawer from '../components/ConfigDrawer';
 import ErrorsDrawer from '../components/ErrorsDrawer';
 import SchedulesDrawer from '../components/SchedulesDrawer';
@@ -50,6 +51,7 @@ export default function Projects() {
   const [tablesFor, setTablesFor] = useState<Project | null>(null);
   const [mappingFor, setMappingFor] = useState<Project | null>(null);
   const [validateFor, setValidateFor] = useState<Project | null>(null);
+  const [liveFor, setLiveFor] = useState<Project | null>(null);
   const [configFor, setConfigFor] = useState<Project | null>(null);
   const [errorsFor, setErrorsFor] = useState<Project | null>(null);
   const [schedulesFor, setSchedulesFor] = useState<Project | null>(null);
@@ -167,6 +169,8 @@ export default function Projects() {
             onClick={() => setRunsFor(row)}>Runs</Button>
           <Button size="small" icon={<ProfileOutlined />}
             onClick={() => setErrorsFor(row)}>Logs</Button>
+          <Button size="small" icon={<ThunderboltOutlined />}
+            onClick={() => setLiveFor(row)}>Live</Button>
           <Button size="small" danger icon={<DeleteOutlined />} disabled={!canWrite}
             onClick={() => modal.confirm({
               title: `Delete project "${row.name}"?`,
@@ -287,6 +291,7 @@ export default function Projects() {
       </Modal>
 
       <JobsDrawer project={runsFor} onClose={() => setRunsFor(null)} />
+      <LiveStreamDrawer project={liveFor} onClose={() => setLiveFor(null)} />
       <SchemaDrawer project={tablesFor} onClose={() => setTablesFor(null)} />
       <MappingDrawer project={mappingFor} onClose={() => setMappingFor(null)} />
       <ValidationDrawer project={validateFor} onClose={() => setValidateFor(null)} />

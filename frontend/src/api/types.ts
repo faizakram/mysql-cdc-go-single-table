@@ -341,6 +341,8 @@ export interface TableProfile { schema: string; table: string; rows: number; col
 
 // Live sync monitor (#168) — real-time per-table CDC throughput + lag streamed over SSE.
 export interface LiveTableThroughput {
+  projectId: string | null;
+  project: string | null;
   table: string;
   inserts: number; updates: number; deletes: number; reads: number; total: number;
   eventsPerSec: number;

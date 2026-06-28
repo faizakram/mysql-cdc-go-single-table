@@ -3,6 +3,9 @@ package com.migration.platform.monitoring;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.platform.config.PlatformProperties;
+import com.migration.platform.connector.MigrationConfig;
+import com.migration.platform.project.MigrationProject;
+import com.migration.platform.project.ProjectRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -42,17 +45,25 @@ public class LiveStreamMonitor {
 
     private final PlatformProperties platform;
     private final LiveStreamProperties props;
+    private final ProjectRepository projects;
     private final ObjectMapper mapper = new ObjectMapper();
     private final Map<String, TableStat> stats = new ConcurrentHashMap<>();
+
+    // topic-prefix → project, rebuilt periodically so new/renamed projects are picked up.
+    private volatile Map<String, ProjectRef> prefixes = Map.of();
+    private volatile long prefixesAt;
 
     private volatile boolean running;
     private Thread worker;
     private KafkaConsumer<byte[], byte[]> consumer;
 
-    public LiveStreamMonitor(PlatformProperties platform, LiveStreamProperties props) {
+    public LiveStreamMonitor(PlatformProperties platform, LiveStreamProperties props, ProjectRepository projects) {
         this.platform = platform;
         this.props = props;
+        this.projects = projects;
     }
+
+    private record ProjectRef(String id, String name) {}
 
     @PostConstruct
     void start() {
@@ -115,13 +126,53 @@ public class LiveStreamMonitor {
         return dot >= 0 ? topic.substring(dot + 1) : topic;
     }
 
-    /** Current per-table throughput + lag snapshot, busiest tables first. */
-    public List<LiveStreamDtos.TableThroughput> snapshot() {
+    /**
+     * Per-table throughput + lag snapshot, busiest first. When {@code projectId} is non-null, only
+     * tables whose topic belongs to that project are returned (project-scoped live stream, #168).
+     */
+    public List<LiveStreamDtos.TableThroughput> snapshot(String projectId) {
         long now = System.currentTimeMillis();
+        Map<String, ProjectRef> map = prefixMap(now);
         List<LiveStreamDtos.TableThroughput> out = new ArrayList<>();
-        for (TableStat s : stats.values()) out.add(s.view(now, props.windowSeconds()));
+        for (Map.Entry<String, TableStat> e : stats.entrySet()) {
+            ProjectRef ref = resolveProject(e.getKey(), map);
+            if (projectId != null && (ref == null || !projectId.equals(ref.id()))) continue;
+            out.add(e.getValue().view(now, props.windowSeconds(),
+                    ref == null ? null : ref.id(), ref == null ? null : ref.name()));
+        }
         out.sort(Comparator.comparingDouble(LiveStreamDtos.TableThroughput::eventsPerSec).reversed());
         return out;
+    }
+
+    /** Match a topic to its owning project by longest topic-prefix ({@code prefix.<...>}). */
+    private ProjectRef resolveProject(String topic, Map<String, ProjectRef> map) {
+        ProjectRef best = null;
+        int bestLen = -1;
+        for (Map.Entry<String, ProjectRef> e : map.entrySet()) {
+            String prefix = e.getKey();
+            if (topic.startsWith(prefix + ".") && prefix.length() > bestLen) {
+                best = e.getValue();
+                bestLen = prefix.length();
+            }
+        }
+        return best;
+    }
+
+    /** Cached topic-prefix → project map, rebuilt at most every 15s so renames/new projects appear. */
+    private Map<String, ProjectRef> prefixMap(long now) {
+        if (now - prefixesAt < 15_000 && !prefixes.isEmpty()) return prefixes;
+        Map<String, ProjectRef> map = new java.util.HashMap<>();
+        try {
+            for (MigrationProject p : projects.findAll()) {
+                String prefix = MigrationConfig.from(p.getConfig(), p.getName()).topicPrefix();
+                if (prefix != null && !prefix.isBlank()) map.put(prefix, new ProjectRef(p.getId().toString(), p.getName()));
+            }
+        } catch (Exception e) {
+            log.debug("Could not refresh project prefixes: {}", e.getMessage());
+        }
+        prefixes = map;
+        prefixesAt = now;
+        return map;
     }
 
     @PreDestroy
@@ -161,11 +212,11 @@ public class LiveStreamMonitor {
             while (!recent.isEmpty() && recent.peekFirst() < cutoff) recent.pollFirst();
         }
 
-        synchronized LiveStreamDtos.TableThroughput view(long now, int windowSeconds) {
+        synchronized LiveStreamDtos.TableThroughput view(long now, int windowSeconds, String projectId, String project) {
             prune(now, windowSeconds);
             double perSec = recent.size() / (double) windowSeconds;
             long ageMs = lastEventMs == 0 ? -1 : now - lastEventMs;
-            return new LiveStreamDtos.TableThroughput(table, inserts, updates, deletes, reads,
+            return new LiveStreamDtos.TableThroughput(projectId, project, table, inserts, updates, deletes, reads,
                     inserts + updates + deletes + reads, round1(perSec), lastLagMs, ageMs);
         }
 

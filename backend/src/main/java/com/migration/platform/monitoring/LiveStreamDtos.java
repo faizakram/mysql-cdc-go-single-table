@@ -21,7 +21,8 @@ public final class LiveStreamDtos {
      * @param lastEventAgoMs age of the most recent event (now − last event), ms; -1 if none yet
      */
     public record TableThroughput(
-            String table, long inserts, long updates, long deletes, long reads, long total,
+            String projectId, String project, String table,
+            long inserts, long updates, long deletes, long reads, long total,
             double eventsPerSec, long lastLagMs, long lastEventAgoMs
     ) {}
 
