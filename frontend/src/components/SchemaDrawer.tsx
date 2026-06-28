@@ -4,7 +4,7 @@ import {
 import { KeyOutlined, SaveOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { schemaApi, projectsApi } from '../api/client';
+import { schemaApi, projectsApi, connectionsApi } from '../api/client';
 import type { ColumnInfo, Project, TableInfo, ConstraintApplyResult } from '../api/types';
 
 const keyOf = (t: TableInfo) => `${t.schemaName}.${t.tableName}`;
@@ -70,6 +70,13 @@ export default function SchemaDrawer({ project, onClose }: { project: Project | 
     queryFn: () => schemaApi.tables(connId!),
     enabled: open && !!connId,
   });
+
+  // CDC-enabled is a per-table concept only for SQL Server; other engines capture differently and
+  // always report cdc=false, so the "CDC off" warning is scoped to SQL Server sources to avoid noise.
+  const connections = useQuery({ queryKey: ['connections'], queryFn: connectionsApi.list, enabled: open });
+  const isSqlServerSource = connections.data?.find((c) => c.id === connId)?.dbType === 'SQLSERVER';
+  const selectedCdcOff = isSqlServerSource
+    && selected.some((k) => tables.data?.find((t) => keyOf(t) === k && !t.cdcEnabled));
 
   const save = useMutation({
     mutationFn: () => projectsApi.update(project!.id, {
@@ -139,6 +146,11 @@ export default function SchemaDrawer({ project, onClose }: { project: Project | 
       {selected.some((k) => tables.data?.find((t) => keyOf(t) === k && !t.hasPrimaryKey)) && (
         <Alert type="info" showIcon style={{ marginBottom: 16 }}
           message="Some selected tables have no primary key; upsert/CDC delete handling needs one." />
+      )}
+      {selectedCdcOff && (
+        <Alert type="warning" showIcon style={{ marginBottom: 16 }}
+          message="Some selected tables are not CDC-enabled"
+          description="They'll be snapshotted once during the initial load, but ongoing inserts/updates/deletes won't stream to the target. Enable CDC on them (sys.sp_cdc_enable_table) to keep them in sync." />
       )}
       <Typography.Paragraph type="secondary">
         Expand a row to inspect columns. The selection drives the connector's table include list.
