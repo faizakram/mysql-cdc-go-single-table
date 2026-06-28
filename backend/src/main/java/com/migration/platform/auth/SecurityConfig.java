@@ -3,6 +3,7 @@ package com.migration.platform.auth;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.platform.common.ApiError;
 import com.migration.platform.config.PlatformProperties;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,6 +43,12 @@ public class SecurityConfig {
             .cors(c -> c.configurationSource(corsConfigurationSource()))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // Don't re-authorize ASYNC/ERROR dispatches. SSE endpoints (the live CDC monitor)
+                // re-enter the filter chain on the ASYNC dispatch when the stream tears down; under
+                // STATELESS sessions the SecurityContext is empty there, so re-authorizing threw
+                // "Access Denied" on an already-committed response and churned the EventSource. The
+                // initial REQUEST dispatch is still fully authorized. (#168)
+                .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/v1/auth/login").permitAll()
                 .requestMatchers("/actuator/health/**", "/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
