@@ -68,6 +68,10 @@ function installApiMock(routeFn: (handler: (route: Route) => Promise<void>) => P
 test('login → dashboard → create project → dry-run', async ({ page }) => {
   await installApiMock((h) => page.route('**/api/v1/**', h));
 
+  // Suppress the first-run onboarding tour: it auto-opens on first login and its overlay mask would
+  // intercept the nav clicks below. Real first-time users still get it; here we mark it already seen.
+  await page.addInitScript(() => localStorage.setItem('mp_tour_done', '1'));
+
   // 1. Login
   await page.goto('/');
   await page.getByPlaceholder('admin').fill('admin');
