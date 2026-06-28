@@ -52,6 +52,7 @@ public class SchemaDiscoveryService {
                 while (rs.next()) {
                     String sch = rs.getString("TABLE_SCHEM");
                     String tbl = rs.getString("TABLE_NAME");
+                    if (isSystemTable(c.getDbType(), sch, tbl)) continue;
                     boolean hasPk = pkTables != null
                             ? pkTables.contains((sch + "." + tbl).toLowerCase())
                             : hasPrimaryKey(md, catalog, sch, tbl);
@@ -205,6 +206,24 @@ public class SchemaDiscoveryService {
         } catch (SQLException e) {
             return null;   // permission/engine quirk — caller uses the per-table metadata lookup
         }
+    }
+
+    /**
+     * System / internal tables that must never be offered for migration: CDC & replication plumbing
+     * (cdc/sys schemas, systranschemas, MSrepl*, sysdiagrams) and the platform's own helper tables
+     * (a leading underscore, e.g. _GenControl). Excluding them keeps the picker clean and prevents
+     * accidentally selecting tables that aren't CDC-tracked (which forces the whole job to fall back
+     * to a one-time bulk load instead of streaming).
+     */
+    private boolean isSystemTable(DbType type, String schema, String table) {
+        if (table != null && table.startsWith("_")) return true;          // platform/helper tables
+        if (type == DbType.SQLSERVER) {
+            String s = schema == null ? "" : schema.toLowerCase();
+            if (s.equals("cdc") || s.equals("sys")) return true;
+            String n = table == null ? "" : table.toLowerCase();
+            return n.equals("systranschemas") || n.equals("sysdiagrams") || n.startsWith("msrepl");
+        }
+        return false;
     }
 
     /** SQL Server: tables tracked by CDC. Returns "schema.table" (lowercased). Empty if CDC absent. */

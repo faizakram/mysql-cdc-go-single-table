@@ -186,7 +186,10 @@ export default function JobsDrawer({ project, onClose }: { project: Project | nu
 
       <Modal title="Connector preview (secrets masked)" open={preview !== null}
         footer={null} width={760} onCancel={() => setPreview(null)}>
-        <pre style={{ maxHeight: 480, overflow: 'auto', background: '#f5f5f5', padding: 12 }}>
+        <pre style={{
+          maxHeight: 480, overflow: 'auto', background: '#f5f5f5', color: '#1E2430',
+          padding: 12, borderRadius: 6, margin: 0, fontSize: 12,
+        }}>
           {JSON.stringify(preview, null, 2)}
         </pre>
       </Modal>
