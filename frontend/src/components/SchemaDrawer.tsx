@@ -211,7 +211,10 @@ export default function SchemaDrawer({ project, onClose }: { project: Project | 
           out of scope.
         </Typography.Paragraph>
         {ddl.isLoading ? <Spin /> : (
-          <pre style={{ maxHeight: 280, overflow: 'auto', background: '#f5f5f5', padding: 12, fontSize: 12 }}>
+          <pre style={{
+            maxHeight: 280, overflow: 'auto', background: '#f5f5f5', color: '#1E2430',
+            padding: 12, fontSize: 12, borderRadius: 6, margin: 0,
+          }}>
             {(ddl.data ?? []).join('\n') || '— no indexes or foreign keys found —'}
           </pre>
         )}
