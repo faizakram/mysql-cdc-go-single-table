@@ -30,9 +30,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain chain) throws ServletException, IOException {
         String header = request.getHeader("Authorization");
-        if (header != null && header.startsWith("Bearer ")) {
+        // Bearer header normally; fall back to a ?token= query-param for SSE/EventSource, which can't
+        // set request headers (used by the live-stream endpoint, #168).
+        String token = (header != null && header.startsWith("Bearer ")) ? header.substring(7)
+                : request.getParameter("token");
+        if (token != null && !token.isBlank()) {
             try {
-                Claims claims = jwt.parse(header.substring(7));
+                Claims claims = jwt.parse(token);
                 String username = claims.getSubject();
                 String role = claims.get("role", String.class);
                 var auth = new UsernamePasswordAuthenticationToken(
