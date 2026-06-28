@@ -40,10 +40,21 @@ public class MonitoringService {
     /** Health for every project that has at least one run with deployed connectors. */
     @Transactional(readOnly = true)
     public List<ProjectHealth> overview() {
-        List<ProjectHealth> out = new ArrayList<>();
-        for (MigrationProject p : projects.findAll()) {
-            latestJobWithConnectors(p.getId()).ifPresent(job -> out.add(buildHealth(p, job)));
+        // Derive the monitored set straight from the jobs table (newest-first) instead of scanning every
+        // project and running a per-project job query — the old O(P)+N+1 that AlertMonitor hit every 2 min
+        // (#214). One pass to pick the latest connector-bearing job per project, then one batch project fetch.
+        java.util.Map<UUID, MigrationJob> latestByProject = new java.util.LinkedHashMap<>();
+        for (MigrationJob j : jobs.findWithConnectorsOrderByCreatedAtDesc()) {
+            latestByProject.putIfAbsent(j.getProjectId(), j);   // first seen = latest (ordered desc)
         }
+        if (latestByProject.isEmpty()) return List.of();
+        java.util.Map<UUID, MigrationProject> byId = new java.util.HashMap<>();
+        projects.findAllById(latestByProject.keySet()).forEach(p -> byId.put(p.getId(), p));
+        List<ProjectHealth> out = new ArrayList<>();
+        latestByProject.forEach((pid, job) -> {
+            MigrationProject p = byId.get(pid);
+            if (p != null) out.add(buildHealth(p, job));
+        });
         return out;
     }
 

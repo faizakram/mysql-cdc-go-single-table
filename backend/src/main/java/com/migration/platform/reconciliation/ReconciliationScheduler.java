@@ -32,8 +32,10 @@ public class ReconciliationScheduler {
 
     @Scheduled(cron = "${platform.reconciliation.cron}")
     public void runScheduledReconciliations() {
-        for (MigrationProject p : projects.findAll()) {
-            if (p.getStatus() != ProjectStatus.ACTIVE || !optedIn(p)) continue;
+        // Only ACTIVE projects can have drift worth reconciling — query them directly instead of
+        // scanning every project (#214).
+        for (MigrationProject p : projects.findByStatus(ProjectStatus.ACTIVE)) {
+            if (!optedIn(p)) continue;
             try {
                 RunDto run = reconciliation.run(p.getId(), "COUNT", 1000);
                 String dedup = "drift:" + p.getId();

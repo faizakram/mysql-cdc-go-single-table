@@ -6,6 +6,7 @@ import com.migration.platform.config.PlatformProperties;
 import com.migration.platform.connector.MigrationConfig;
 import com.migration.platform.project.MigrationProject;
 import com.migration.platform.project.ProjectRepository;
+import com.migration.platform.project.ProjectStatus;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -42,6 +43,8 @@ import java.util.regex.Pattern;
 public class LiveStreamMonitor {
 
     private static final Logger log = LoggerFactory.getLogger(LiveStreamMonitor.class);
+    /** Drop per-table stats after this long with no events, so the in-memory map stays bounded (#214). */
+    private static final long STAT_TTL_MS = 3_600_000L;   // 1 hour
 
     private final PlatformProperties platform;
     private final LiveStreamProperties props;
@@ -132,6 +135,9 @@ public class LiveStreamMonitor {
      */
     public List<LiveStreamDtos.TableThroughput> snapshot(String projectId) {
         long now = System.currentTimeMillis();
+        // Evict tables with no events for a while so the map can't grow unbounded as topics/projects
+        // come and go (memory leak, #214). They re-appear on the next event if the topic is live again.
+        stats.entrySet().removeIf(e -> e.getValue().lastEventMs > 0 && now - e.getValue().lastEventMs > STAT_TTL_MS);
         Map<String, ProjectRef> map = prefixMap(now);
         List<LiveStreamDtos.TableThroughput> out = new ArrayList<>();
         for (Map.Entry<String, TableStat> e : stats.entrySet()) {
@@ -158,12 +164,14 @@ public class LiveStreamMonitor {
         return best;
     }
 
-    /** Cached topic-prefix → project map, rebuilt at most every 15s so renames/new projects appear. */
+    /** Cached topic-prefix → project map, rebuilt at most every 30s so renames/new projects appear. */
     private Map<String, ProjectRef> prefixMap(long now) {
-        if (now - prefixesAt < 15_000 && !prefixes.isEmpty()) return prefixes;
+        if (now - prefixesAt < 30_000 && !prefixes.isEmpty()) return prefixes;
         Map<String, ProjectRef> map = new java.util.HashMap<>();
         try {
-            for (MigrationProject p : projects.findAll()) {
+            // Only ACTIVE projects have live topics — avoid loading every project here, hit on the SSE
+            // broadcast path (#214).
+            for (MigrationProject p : projects.findByStatus(ProjectStatus.ACTIVE)) {
                 String prefix = MigrationConfig.from(p.getConfig(), p.getName()).topicPrefix();
                 if (prefix != null && !prefix.isBlank()) map.put(prefix, new ProjectRef(p.getId().toString(), p.getName()));
             }
