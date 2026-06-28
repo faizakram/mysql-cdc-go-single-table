@@ -42,14 +42,20 @@ public class SchemaDiscoveryService {
             String catalog = conn.getCatalog();
             DatabaseMetaData md = conn.getMetaData();
             Set<String> cdc = c.getDbType() == DbType.SQLSERVER ? cdcEnabledTables(conn) : Set.of();
+            // Primary-key flags in ONE catalog query instead of a getPrimaryKeys() call per table —
+            // the per-table calls were an N+1 that's painfully slow over a high-latency link (#).
+            // null = couldn't resolve set-based → fall back to the per-table metadata lookup.
+            Set<String> pkTables = primaryKeyTables(conn, c.getDbType());
 
             List<TableInfo> out = new ArrayList<>();
             try (ResultSet rs = md.getTables(catalog, schema, "%", new String[]{"TABLE"})) {
                 while (rs.next()) {
                     String sch = rs.getString("TABLE_SCHEM");
                     String tbl = rs.getString("TABLE_NAME");
-                    out.add(new TableInfo(sch, tbl, hasPrimaryKey(md, catalog, sch, tbl),
-                            cdc.contains((sch + "." + tbl).toLowerCase())));
+                    boolean hasPk = pkTables != null
+                            ? pkTables.contains((sch + "." + tbl).toLowerCase())
+                            : hasPrimaryKey(md, catalog, sch, tbl);
+                    out.add(new TableInfo(sch, tbl, hasPk, cdc.contains((sch + "." + tbl).toLowerCase())));
                 }
             }
             out.sort(Comparator.comparing(TableInfo::tableName, String.CASE_INSENSITIVE_ORDER));
@@ -175,6 +181,30 @@ public class SchemaDiscoveryService {
             while (rs.next()) pks.add(rs.getString("COLUMN_NAME"));
         }
         return pks;
+    }
+
+    /**
+     * Tables that have a primary key, as "schema.table" (lowercased), fetched in a single catalog
+     * query per engine — avoids a getPrimaryKeys() round-trip per table when listing. Returns null
+     * if the set can't be resolved (unknown engine / query failed) so the caller falls back per-table.
+     */
+    private Set<String> primaryKeyTables(Connection conn, DbType engine) {
+        String sql = switch (engine) {
+            case SQLSERVER, POSTGRESQL, MYSQL ->
+                    "SELECT table_schema, table_name FROM information_schema.table_constraints "
+                            + "WHERE constraint_type = 'PRIMARY KEY'";
+            case ORACLE -> "SELECT owner, table_name FROM all_constraints WHERE constraint_type = 'P'";
+            case DB2 -> "SELECT tabschema, tabname FROM syscat.tabconst WHERE type = 'P'";
+            case MONGODB -> null;
+        };
+        if (sql == null) return null;
+        Set<String> set = new HashSet<>();
+        try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+            while (rs.next()) set.add((rs.getString(1) + "." + rs.getString(2)).toLowerCase());
+            return set;
+        } catch (SQLException e) {
+            return null;   // permission/engine quirk — caller uses the per-table metadata lookup
+        }
     }
 
     /** SQL Server: tables tracked by CDC. Returns "schema.table" (lowercased). Empty if CDC absent. */
