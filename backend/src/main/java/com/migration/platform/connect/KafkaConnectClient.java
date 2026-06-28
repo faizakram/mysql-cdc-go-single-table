@@ -3,6 +3,7 @@ package com.migration.platform.connect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
@@ -83,13 +84,17 @@ public class KafkaConnectClient {
     }
 
     public void restart(String name) {
-        withRetry(() -> client.post().uri("/connectors/{name}/restart", name).retrieve().toBodilessEntity());
+        // Explicit JSON content type: these are bodiless POSTs, and SimpleClientHttpRequestFactory
+        // otherwise defaults to application/x-www-form-urlencoded, which Connect's restart endpoints
+        // reject with HTTP 415 — so auto-restart of a FAILED task silently never recovered it (#202).
+        withRetry(() -> client.post().uri("/connectors/{name}/restart", name)
+                .contentType(MediaType.APPLICATION_JSON).retrieve().toBodilessEntity());
     }
 
     /** Restart a specific connector task (Kafka Connect) — used to recover a FAILED sink task (#176). */
     public void restartTask(String name, int taskId) {
         withRetry(() -> client.post().uri("/connectors/{name}/tasks/{taskId}/restart", name, taskId)
-                .retrieve().toBodilessEntity());
+                .contentType(MediaType.APPLICATION_JSON).retrieve().toBodilessEntity());
     }
 
     /** Transition a connector to the STOPPED state (Kafka Connect 3.5+) — keeps config, releases tasks. */
