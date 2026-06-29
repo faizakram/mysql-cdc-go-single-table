@@ -154,6 +154,23 @@ export interface ProjectHealth {
   connectors: ConnectorHealth[];
 }
 
+export interface AdvisorRecommendation {
+  severity: string;          // OK | SUGGESTION | WARNING
+  setting: string | null;
+  current: string | null;
+  suggested: string | null;
+  message: string;
+}
+
+export interface AdvisorReport {
+  projectId: string;
+  jobStatus: string;
+  eventsPerSec: number;
+  maxLagMs: number;
+  sinkLagRecords: number | null;
+  recommendations: AdvisorRecommendation[];
+}
+
 export interface ReconciliationResult {
   schemaName: string;
   tableName: string;

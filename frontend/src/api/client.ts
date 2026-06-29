@@ -7,6 +7,7 @@ import type {
   Schedule, ScheduleRequest, OrchestratorStatus, AuditPage, EngineSpec, CdcReadiness,
   MigrationPlan, SchemaObjectInventory, DryRunReport, CostEstimate,
   ValidationReport, ValidationRun, Recommendation, PluginInfo, TableProfile, Page, DbType,
+  AdvisorReport,
 } from './types';
 
 // Drop undefined/empty params so optional filters don't hit the wire as "?q=".
@@ -95,6 +96,11 @@ export const monitoringApi = {
   overview: () => http.get<ProjectHealth[]>('/monitoring/overview').then((r) => r.data),
   projectStatus: (projectId: string) =>
     http.get<ProjectHealth>(`/monitoring/projects/${projectId}`).then((r) => r.data),
+};
+
+export const advisorApi = {
+  forProject: (projectId: string) =>
+    http.get<AdvisorReport>(`/projects/${projectId}/advisor`).then((r) => r.data),
 };
 
 export const schemaApi = {

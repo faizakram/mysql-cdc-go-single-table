@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { projectsApi, connectionsApi, monitoringApi, jobsApi, orchestratorApi } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import StatCard from '../components/StatCard';
+import AdvisorPanel from '../components/AdvisorPanel';
 import EmptyState from '../components/EmptyState';
 import Sparkline from '../components/Sparkline';
 import { useSeries } from '../hooks/useSeries';
@@ -108,6 +109,10 @@ export default function Dashboard() {
             dataSource={overview.data}
             pagination={false}
             scroll={{ x: 'max-content' }}
+            expandable={{
+              // Expand a project to see live performance-tuning recommendations (#217).
+              expandedRowRender: (p) => <AdvisorPanel projectId={p.projectId} />,
+            }}
             columns={[
               { title: 'Project', dataIndex: 'projectName' },
               {
