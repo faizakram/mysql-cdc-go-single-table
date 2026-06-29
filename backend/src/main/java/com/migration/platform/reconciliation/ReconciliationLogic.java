@@ -45,6 +45,25 @@ public final class ReconciliationLogic {
         return value == null ? null : value.toString().trim().toLowerCase();
     }
 
+    /** Separator joining composite-PK parts; mirrors {@code chr(1)} in the target key expression (#217). */
+    public static final String KEY_SEP = String.valueOf((char) 1);
+
+    /**
+     * Composite key from PK column values in key order (#217 online content validation): each part is
+     * normalised like {@link #normalizeKey} and joined with {@link #KEY_SEP}. Returns null if ANY part is
+     * null — a row with a null PK component can't be reliably matched, so it's skipped.
+     */
+    public static String compositeKey(List<Object> pkValuesInKeyOrder) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < pkValuesInKeyOrder.size(); i++) {
+            String part = normalizeKey(pkValuesInKeyOrder.get(i));
+            if (part == null) return null;
+            if (i > 0) sb.append(KEY_SEP);
+            sb.append(part);
+        }
+        return sb.toString();
+    }
+
     /**
      * Canonicalises a column value so equivalent MSSQL/PostgreSQL representations hash the same
      * (best effort): numbers via BigDecimal (1.50 == 1.5), timestamps truncated to seconds, bytes

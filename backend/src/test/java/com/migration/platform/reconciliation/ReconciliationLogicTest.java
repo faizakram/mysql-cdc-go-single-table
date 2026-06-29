@@ -63,4 +63,27 @@ class ReconciliationLogicTest {
         assertThat(ReconciliationLogic.normalizeKey(42)).isEqualTo("42");
         assertThat(ReconciliationLogic.normalizeKey(null)).isNull();
     }
+
+    @Test
+    void compositeKeyJoinsNormalisedPartsAndIsOrderSensitive() {
+        // #217: composite-PK content validation builds one key from all PK columns in key order.
+        String sep = ReconciliationLogic.KEY_SEP;
+        assertThat(ReconciliationLogic.compositeKey(List.of("A", 7)))
+                .isEqualTo("a" + sep + "7");
+        // A single-column key matches the plain normalized form (back-compat with single-PK checksum).
+        assertThat(ReconciliationLogic.compositeKey(List.of("Order-9")))
+                .isEqualTo(ReconciliationLogic.normalizeKey("Order-9"));
+        // Order matters: (a,b) and (b,a) are distinct keys.
+        assertThat(ReconciliationLogic.compositeKey(List.of("a", "b")))
+                .isNotEqualTo(ReconciliationLogic.compositeKey(List.of("b", "a")));
+    }
+
+    @Test
+    void compositeKeyIsNullWhenAnyPartIsNull() {
+        // A null PK component can't be reliably matched across engines — skip the row.
+        java.util.List<Object> withNull = new java.util.ArrayList<>();
+        withNull.add("a");
+        withNull.add(null);
+        assertThat(ReconciliationLogic.compositeKey(withNull)).isNull();
+    }
 }
