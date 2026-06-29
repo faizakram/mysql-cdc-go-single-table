@@ -27,11 +27,12 @@ public final class TypeMappingMatrix {
 
     /** Map a source column type to the target engine's type, preserving DECIMAL/NUMERIC scale (#197). */
     public static Mapped map(DbType source, DbType target, String sourceType, int size, int scale) {
-        String src = sourceType == null ? "" : sourceType.trim().toLowerCase();
+        String raw = sourceType == null ? "" : sourceType.trim().toLowerCase();
+        boolean unsigned = raw.contains("unsigned");   // detect before the modifier is stripped (#182)
         // Normalize so the base type categorizes cleanly regardless of how a driver decorates it:
         //  - drop precision/length parens: numeric(10,2) -> numeric, timestamp(6) -> timestamp
         //  - drop storage/auto-increment modifiers: "int identity" (SQL Server), "int unsigned" (MySQL)
-        src = src.replaceAll("\\s*\\([^)]*\\)", "")
+        String src = raw.replaceAll("\\s*\\([^)]*\\)", "")
                  .replace(" identity", "").replace(" unsigned", "").replace(" zerofill", "")
                  .trim();
         Cat cat = canonical(source, src);
@@ -44,11 +45,53 @@ public final class TypeMappingMatrix {
             }
             return new Mapped(sized(base, size, src), null);
         }
-        String rendered = render(target, cat, size, scale);
-        String note = cat == Cat.UNKNOWN
-                ? "No canonical mapping for '" + sourceType + "' (" + source + "→" + target + "); defaulted — review."
-                : null;
+
+        // Unsigned integers span ~2x the signed range; widen so an unsigned max can't overflow the target
+        // (e.g. MySQL int unsigned 4.29B into a 2.1B INTEGER). bigint unsigned needs NUMERIC(20,0) (#182).
+        int renderSize = size, renderScale = scale;
+        String widenNote = null;
+        if (unsigned) {
+            Cat widened = switch (cat) {
+                case INT16 -> Cat.INT32;
+                case INT32 -> Cat.INT64;
+                case INT64 -> Cat.DECIMAL;
+                default -> cat;
+            };
+            if (widened != cat) {
+                if (widened == Cat.DECIMAL) { renderSize = 20; renderScale = 0; }   // bigint unsigned → NUMERIC(20,0)
+                widenNote = "Unsigned '" + src + "' widened to " + render(target, widened, renderSize, renderScale)
+                        + " to avoid overflow.";
+                cat = widened;
+            }
+        }
+
+        String rendered = render(target, cat, renderSize, renderScale);
+        String note;
+        if (cat == Cat.UNKNOWN) {
+            note = "No canonical mapping for '" + sourceType + "' (" + source + "→" + target + "); defaulted — review.";
+        } else if (widenNote != null) {
+            note = widenNote;
+        } else {
+            note = lossyNote(src, rendered);   // spatial/enum → binary/text loses semantics (#182)
+        }
         return new Mapped(rendered, note);
+    }
+
+    private static final java.util.Set<String> SPATIAL = java.util.Set.of(
+            "geometry", "geography", "point", "linestring", "polygon",
+            "multipoint", "multilinestring", "multipolygon", "geometrycollection");
+
+    /** A note for mappings that preserve bytes but lose type semantics — spatial → binary/text, enum/set →
+     *  text. The data crosses over, but spatial queryability and the enum value-set don't (#182). */
+    private static String lossyNote(String srcBase, String rendered) {
+        if (SPATIAL.contains(srcBase)) {
+            return "Spatial type '" + srcBase + "' maps to " + rendered
+                    + " — geometry semantics (spatial indexing/queries) are not preserved; review.";
+        }
+        if ("enum".equals(srcBase) || "set".equals(srcBase)) {
+            return "'" + srcBase + "' maps to " + rendered + " — the allowed value set is not enforced on the target; review.";
+        }
+        return null;
     }
 
     /** {@code (precision, scale)} suffix for a DECIMAL/NUMERIC/NUMBER target type. */

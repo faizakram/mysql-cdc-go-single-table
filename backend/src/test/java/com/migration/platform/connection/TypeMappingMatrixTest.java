@@ -61,11 +61,13 @@ class TypeMappingMatrixTest {
 
     @Test
     void modifiersAndPrecisionAreNormalized() {
-        // IDENTITY / unsigned / zerofill modifiers stripped -> base type maps cleanly.
+        // IDENTITY / zerofill modifiers stripped -> base type maps cleanly.
         assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "int identity", 0).targetType())
                 .isEqualTo("INTEGER");
         assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "bigint identity", 0).note()).isNull();
-        assertThat(TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "int unsigned", 0).note()).isNull();
+        // unsigned is recognized (and widened, see below) rather than dropped silently.
+        assertThat(TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "int unsigned", 0).targetType())
+                .isEqualTo("BIGINT");
         // Precision/length parens stripped -> still categorizes (NUMBER(10,2) -> NUMERIC, datetime2(7) ok).
         assertThat(TypeMappingMatrix.map(DbType.ORACLE, DbType.POSTGRESQL, "NUMBER(10,2)", 0).targetType())
                 .isEqualTo("NUMERIC");
@@ -73,16 +75,46 @@ class TypeMappingMatrixTest {
     }
 
     @Test
-    void exoticTypesAutoBindWithoutWarning() {
-        // SQL Server CLR/special types auto-bind to sensible targets — no "review" warning.
+    void unsignedIntegersAreWidenedToAvoidOverflow() {
+        // #182: an unsigned max would overflow the same-width signed target — widen one step.
+        var smallU = TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "tinyint unsigned", 0);
+        assertThat(smallU.targetType()).isEqualTo("INTEGER");
+        assertThat(smallU.note()).contains("widened");
+
+        var intU = TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "int unsigned", 0);
+        assertThat(intU.targetType()).isEqualTo("BIGINT");
+        assertThat(intU.note()).contains("widened");
+
+        // bigint unsigned (up to ~1.8e19) exceeds BIGINT -> NUMERIC(20,0).
+        var bigU = TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "bigint unsigned", 0);
+        assertThat(bigU.targetType()).isEqualTo("NUMERIC(20, 0)");
+        assertThat(bigU.note()).contains("widened");
+
+        // Signed integers are unchanged and carry no note.
+        assertThat(TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "int", 0).targetType()).isEqualTo("INTEGER");
+        assertThat(TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "int", 0).note()).isNull();
+    }
+
+    @Test
+    void spatialAndEnumMappingsAreFlaggedLossy() {
+        // #182: data crosses over but type semantics don't — warn so it's reviewed.
+        var geo = TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "geography", 0);
+        assertThat(geo.targetType()).isEqualTo("BYTEA");
+        assertThat(geo.note()).contains("Spatial");
+        assertThat(TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "geometry", 0).note()).contains("Spatial");
+        var en = TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "enum", 0);
+        assertThat(en.targetType()).isEqualTo("TEXT");
+        assertThat(en.note()).contains("value set");
+    }
+
+    @Test
+    void nonLossySpecialsBindWithoutWarning() {
+        // Specials that map faithfully enough carry no "review" note.
         assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "timestamp", 0).targetType())
                 .isEqualTo("BYTEA"); // rowversion
-        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "geography", 0).note()).isNull();
         assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "hierarchyid", 0).note()).isNull();
         assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.POSTGRESQL, "sql_variant", 0).note()).isNull();
-        // Postgres / MySQL specials too.
         assertThat(TypeMappingMatrix.map(DbType.POSTGRESQL, DbType.MYSQL, "inet", 0).note()).isNull();
-        assertThat(TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "geometry", 0).note()).isNull();
     }
 
     @Test
