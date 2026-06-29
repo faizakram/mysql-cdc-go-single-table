@@ -45,12 +45,14 @@ public class JobService {
     private final com.migration.platform.connection.TargetSchemaService targetSchema;
     private final CdcReadinessService cdcReadiness;
     private final BulkCopyService bulkCopy;
+    private final com.migration.platform.connection.RowCountEstimateService rowEstimates;
 
     public JobService(JobRepository repo, ProjectRepository projects, ConnectionRepository connections,
                       KafkaConnectClient connect, ConnectorConfigService configService, CryptoService crypto,
                       TableStatusRepository tableStatus, com.migration.platform.audit.AuditService audit,
                       com.migration.platform.connection.TargetSchemaService targetSchema,
-                      CdcReadinessService cdcReadiness, BulkCopyService bulkCopy) {
+                      CdcReadinessService cdcReadiness, BulkCopyService bulkCopy,
+                      com.migration.platform.connection.RowCountEstimateService rowEstimates) {
         this.repo = repo;
         this.projects = projects;
         this.connections = connections;
@@ -62,6 +64,7 @@ public class JobService {
         this.targetSchema = targetSchema;
         this.cdcReadiness = cdcReadiness;
         this.bulkCopy = bulkCopy;
+        this.rowEstimates = rowEstimates;
     }
 
     @Transactional(readOnly = true)
@@ -345,15 +348,33 @@ public class JobService {
                 .from(project.getConfig(), project.getName()).snapshotMode();
         boolean snapshotsData = !java.util.Set.of("schema_only", "no_data").contains(snapshotMode);
         tableStatus.deleteByJobId(job.getId());
-        for (String fq : selectedTables(project)) {
+        List<String> tables = selectedTables(project);
+        java.util.Map<String, Long> totals = sourceRowEstimates(project, tables);   // snapshot %/ETA (#185)
+        OffsetDateTime now = OffsetDateTime.now();
+        for (String fq : tables) {
             String[] parts = fq.split("\\.", 2);
+            String tableName = parts.length == 2 ? parts[1] : parts[0];
             TableStatus ts = new TableStatus();
             ts.setJobId(job.getId());
             ts.setSchemaName(parts.length == 2 ? parts[0] : "dbo");
-            ts.setTableName(parts.length == 2 ? parts[1] : parts[0]);
+            ts.setTableName(tableName);
             ts.setPhase(snapshotsData ? "DATA" : "CDC");
             ts.setStatus("PENDING");
+            ts.setTotalRows(totals.get(tableName.toLowerCase()));
+            ts.setStartedAt(now);
             tableStatus.save(ts);
+        }
+    }
+
+    /** Best-effort source row-count estimates for snapshot %-complete / ETA (#185); empty on any failure. */
+    private java.util.Map<String, Long> sourceRowEstimates(MigrationProject project, List<String> tables) {
+        try {
+            return connections.findById(project.getSourceConnectionId())
+                    .map(src -> rowEstimates.estimate(src, tables))
+                    .orElseGet(java.util.Map::of);
+        } catch (Exception e) {
+            log.debug("Source row estimates unavailable for project {}: {}", project.getId(), e.getMessage());
+            return java.util.Map.of();
         }
     }
 
@@ -362,11 +383,13 @@ public class JobService {
      * copy resumes at table granularity instead of replaying every table (#217). Tables that previously
      * failed or never finished are reset to PENDING; status rows for tables no longer selected are dropped.
      */
-    private void seedTableStatusResumable(MigrationJob job, List<String> tables) {
+    private void seedTableStatusResumable(MigrationJob job, MigrationProject project, List<String> tables) {
         java.util.Map<String, TableStatus> existing = new java.util.HashMap<>();
         for (TableStatus ts : tableStatus.findByJobIdOrderByTableName(job.getId())) {
             existing.put(ts.getTableName().toLowerCase(), ts);
         }
+        java.util.Map<String, Long> totals = sourceRowEstimates(project, tables);   // snapshot %/ETA (#185)
+        OffsetDateTime now = OffsetDateTime.now();
         java.util.Set<String> selected = new java.util.HashSet<>();
         for (String fq : tables) {
             String[] parts = fq.split("\\.", 2);
@@ -387,6 +410,8 @@ public class JobService {
             ts.setStatus("PENDING");
             ts.setRowsSynced(0);
             ts.setError(null);
+            ts.setTotalRows(totals.get(tableName.toLowerCase()));
+            ts.setStartedAt(now);
             tableStatus.save(ts);
         }
         // Drop status rows for tables no longer in the selection so /tables reflects the current set.
@@ -429,7 +454,7 @@ public class JobService {
         job.setError(null);
         project.setStatus(ProjectStatus.ACTIVE);
         projects.save(project);
-        seedTableStatusResumable(job, tables);
+        seedTableStatusResumable(job, project, tables);
         MigrationJob saved = repo.save(job);
         audit.record("JOB_START", job.getProjectId().toString(),
                 java.util.Map.of("jobId", saved.getId().toString(), "mode", "full-load"));

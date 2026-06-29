@@ -31,6 +31,16 @@ public class TableStatus {
     @Column(name = "rows_synced", nullable = false)
     private long rowsSynced;
 
+    // Snapshot progress / ETA / lag (#185). Nullable: unknown until estimated / not applicable.
+    @Column(name = "total_rows")
+    private Long totalRows;            // source row-count estimate (catalog stats) for %-complete / ETA
+
+    @Column(name = "last_lag_ms")
+    private Long lastLagMs;            // most recent per-table replication lag (CDC tables)
+
+    @Column(name = "started_at")
+    private OffsetDateTime startedAt;  // when this table's sync began (per-table throughput)
+
     @Column(columnDefinition = "text")
     private String error;
 
@@ -61,4 +71,10 @@ public class TableStatus {
     public String getError() { return error; }
     public void setError(String error) { this.error = error; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
+    public Long getTotalRows() { return totalRows; }
+    public void setTotalRows(Long totalRows) { this.totalRows = totalRows; }
+    public Long getLastLagMs() { return lastLagMs; }
+    public void setLastLagMs(Long lastLagMs) { this.lastLagMs = lastLagMs; }
+    public OffsetDateTime getStartedAt() { return startedAt; }
+    public void setStartedAt(OffsetDateTime startedAt) { this.startedAt = startedAt; }
 }

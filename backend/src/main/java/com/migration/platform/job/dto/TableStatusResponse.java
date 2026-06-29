@@ -6,10 +6,12 @@ import java.time.OffsetDateTime;
 
 public record TableStatusResponse(
         String schemaName, String tableName, String phase, String status,
-        long rowsSynced, String error, OffsetDateTime updatedAt
+        long rowsSynced, Long totalRows, String error, OffsetDateTime updatedAt,
+        Long lastLagMs, OffsetDateTime startedAt
 ) {
     public static TableStatusResponse from(TableStatus t) {
         return new TableStatusResponse(t.getSchemaName(), t.getTableName(), t.getPhase(),
-                t.getStatus(), t.getRowsSynced(), t.getError(), t.getUpdatedAt());
+                t.getStatus(), t.getRowsSynced(), t.getTotalRows(), t.getError(), t.getUpdatedAt(),
+                t.getLastLagMs(), t.getStartedAt());
     }
 }

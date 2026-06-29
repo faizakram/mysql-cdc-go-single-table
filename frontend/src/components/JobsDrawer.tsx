@@ -1,5 +1,5 @@
 import {
-  Drawer, Button, Table, Tag, Space, App, Modal, Typography, Empty, Tooltip, Checkbox,
+  Drawer, Button, Table, Tag, Space, App, Modal, Typography, Empty, Tooltip, Checkbox, Progress,
 } from 'antd';
 import {
   PlayCircleOutlined, PauseOutlined, StepForwardOutlined, StopOutlined,
@@ -16,6 +16,36 @@ const TS_COLOR: Record<string, string> = {
 const PHASE_COLOR: Record<string, string> = {
   SCHEMA: 'purple', DATA: 'blue', CDC: 'cyan',
 };
+
+/** Human-friendly duration from seconds (#185). */
+function fmtDuration(sec: number): string {
+  if (!isFinite(sec) || sec < 0) return '—';
+  if (sec < 60) return `${Math.round(sec)}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`;
+  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+}
+
+/** Per-table replication lag, ms → "x ms" / "x.x s" (#185). */
+function fmtLag(ms: number | null): string {
+  if (ms == null) return '—';
+  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+}
+
+/** Snapshot %-complete from rows synced vs the source estimate; COMPLETED is always 100 (#185). */
+function progressPct(t: JobTableStatus): number | null {
+  if (t.status === 'COMPLETED') return 100;
+  if (!t.totalRows || t.totalRows <= 0) return null;
+  return Math.min(99, Math.round((100 * t.rowsSynced) / t.totalRows));  // cap <100 until truly done
+}
+
+/** ETA seconds from per-table throughput (rows synced / elapsed since start); null when not derivable. */
+function etaSeconds(t: JobTableStatus): number | null {
+  if (t.status !== 'IN_PROGRESS' || !t.totalRows || !t.startedAt) return null;
+  const elapsed = (Date.now() - new Date(t.startedAt).getTime()) / 1000;
+  const rate = elapsed > 0 ? t.rowsSynced / elapsed : 0;
+  const remaining = t.totalRows - t.rowsSynced;
+  return rate > 0 && remaining > 0 ? remaining / rate : null;
+}
 
 function JobTables({ jobId, live }: { jobId: string; live: boolean }) {
   const { data, isLoading } = useQuery({
@@ -46,7 +76,41 @@ function JobTables({ jobId, live }: { jobId: string; live: boolean }) {
         },
         {
           title: 'Rows synced', dataIndex: 'rowsSynced', align: 'right' as const,
-          render: (n: number) => (n ?? 0).toLocaleString(),
+          render: (n: number, t: JobTableStatus) => {
+            const synced = (n ?? 0).toLocaleString();
+            return t.totalRows && t.totalRows > 0
+              ? <Tooltip title={`~${t.totalRows.toLocaleString()} estimated`}>{synced}</Tooltip>
+              : synced;
+          },
+        },
+        {
+          title: 'Progress', align: 'right' as const, width: 120,
+          render: (_: unknown, t: JobTableStatus) => {
+            const pct = progressPct(t);
+            if (pct == null) return <Typography.Text type="secondary">—</Typography.Text>;
+            return (
+              <Progress
+                percent={pct} size="small" style={{ width: 96, marginBottom: 0 }}
+                status={t.status === 'FAILED' ? 'exception' : t.status === 'COMPLETED' ? 'success' : 'active'}
+              />
+            );
+          },
+        },
+        {
+          title: 'ETA', align: 'right' as const,
+          render: (_: unknown, t: JobTableStatus) => {
+            if (t.status === 'COMPLETED') return <Typography.Text type="secondary">done</Typography.Text>;
+            const eta = etaSeconds(t);
+            return eta == null ? <Typography.Text type="secondary">—</Typography.Text> : fmtDuration(eta);
+          },
+        },
+        {
+          title: 'Lag', align: 'right' as const,
+          render: (_: unknown, t: JobTableStatus) => (
+            <Typography.Text type={t.lastLagMs != null && t.lastLagMs > 0 ? undefined : 'secondary'}>
+              {fmtLag(t.lastLagMs)}
+            </Typography.Text>
+          ),
         },
       ]}
     />

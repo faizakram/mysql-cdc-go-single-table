@@ -35,14 +35,17 @@ public class ProgressTracker {
     private final TableStatusRepository tableStatus;
     private final KafkaConnectClient connect;
     private final LagService lag;
+    private final com.migration.platform.monitoring.LiveStreamMonitor liveMonitor;
 
     public ProgressTracker(JobRepository jobs, ProjectRepository projects, TableStatusRepository tableStatus,
-                           KafkaConnectClient connect, LagService lag) {
+                           KafkaConnectClient connect, LagService lag,
+                           com.migration.platform.monitoring.LiveStreamMonitor liveMonitor) {
         this.jobs = jobs;
         this.projects = projects;
         this.tableStatus = tableStatus;
         this.connect = connect;
         this.lag = lag;
+        this.liveMonitor = liveMonitor;
     }
 
     @Scheduled(fixedDelayString = "${platform.progress.interval-ms:15000}", initialDelay = 20000)
@@ -67,6 +70,7 @@ public class ProgressTracker {
         String prefix = MigrationConfig.from(project.getConfig(), project.getName()).topicPrefix();
 
         Map<String, Long> recordsByTable = lag.recordsByTable(prefix);
+        Map<String, Long> lagByTable = liveLagByTable(job.getProjectId());   // per-table replication lag (#185)
         String failure = sourceTaskFailure(job.getSourceConnectorName());
         Boolean snapshotDone = snapshotComplete(job.getSourceConnectorName());
 
@@ -89,6 +93,8 @@ public class ProgressTracker {
             // the snapshot starts producing, so they're unaffected.
             if (produced == null) continue;
             ts.setRowsSynced(produced);
+            Long lagMs = lagByTable.get(ts.getTableName().toLowerCase());   // per-table lag (#185)
+            if (lagMs != null) ts.setLastLagMs(lagMs);
 
             if (failure != null) {
                 ts.setStatus("FAILED");
@@ -104,6 +110,19 @@ public class ProgressTracker {
             }
             tableStatus.save(ts); // @PreUpdate stamps updatedAt
         }
+    }
+
+    /** Per-table replication lag (ms) keyed by lowercased table name, from the live CDC monitor (#185). */
+    private Map<String, Long> liveLagByTable(java.util.UUID projectId) {
+        Map<String, Long> out = new java.util.HashMap<>();
+        try {
+            for (var t : liveMonitor.snapshot(projectId.toString())) {
+                out.put(t.table().toLowerCase(), t.lastLagMs());
+            }
+        } catch (Exception e) {
+            log.debug("Live lag snapshot unavailable for project {}: {}", projectId, e.getMessage());
+        }
+        return out;
     }
 
     /** First FAILED source task's trace (or generic message), else null when the source is healthy. */

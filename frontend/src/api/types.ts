@@ -185,8 +185,11 @@ export interface JobTableStatus {
   phase: string;
   status: string;
   rowsSynced: number;
+  totalRows: number | null;   // source row-count estimate for %-complete / ETA (#185)
   error: string | null;
   updatedAt: string;
+  lastLagMs: number | null;   // per-table replication lag, CDC tables (#185)
+  startedAt: string | null;   // when this table's sync began (per-table throughput)
 }
 
 export interface Job {
