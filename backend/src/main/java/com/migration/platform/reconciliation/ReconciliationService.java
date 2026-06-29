@@ -122,8 +122,12 @@ public class ReconciliationService {
         ReconciliationResult r = newResult(schema, table);
         try {
             long source = count(sc, "SELECT COUNT(*) FROM [" + schema + "].[" + table + "]");
+            // Only soft-filter tables that actually have the CDC marker — a bulk-copied (non-CDC) table in
+            // a hybrid project has no __cdc_deleted column and would otherwise error (#217, cf. #226).
+            boolean tableSoft = softDelete && hasColumn(tc, targetSchema, TargetNaming.apply(table, naming),
+                    TargetNaming.apply("__cdc_deleted", naming));
             String targetSql = "SELECT COUNT(*) FROM " + qid(tgtEngine, targetSchema) + "." + qid(tgtEngine, TargetNaming.apply(table, naming))
-                    + (softDelete ? " WHERE " + qid(tgtEngine, TargetNaming.apply("__cdc_deleted", naming)) + " IS NOT TRUE" : "");
+                    + (tableSoft ? " WHERE " + qid(tgtEngine, TargetNaming.apply("__cdc_deleted", naming)) + " IS NOT TRUE" : "");
             long target = count(tc, targetSql);
             var outcome = ReconciliationLogic.countOutcome(source, target);
             r.setSourceCount(source);
@@ -141,24 +145,25 @@ public class ReconciliationService {
                                                    String targetSchema, NamingStrategy naming, boolean softDelete, int sampleSize) {
         ReconciliationResult r = newResult(schema, table);
         try {
-            Optional<String> pkOpt = singlePrimaryKey(sc, schema, table);
-            if (pkOpt.isEmpty()) {
+            List<String> pks = primaryKeys(sc, schema, table);
+            if (pks.isEmpty()) {
                 r.setStatus("SKIPPED");
-                r.setError("Checksum sampling requires exactly one primary-key column");
+                r.setError("Checksum sampling requires a primary key");
                 return r;
             }
-            String pk = pkOpt.get();
 
-            // Sample full source rows (keyed by normalised PK) so we can compare content too.
+            // Sample full source rows keyed by a normalised composite PK so we can compare content too —
+            // composite keys are supported, not just single-column PKs (#217).
             Map<String, Map<String, Object>> srcRows = new LinkedHashMap<>();
             List<String> srcCols = new ArrayList<>();
+            String srcOrder = String.join(", ", pks.stream().map(c -> "[" + c + "]").toList());
             String srcSql = "SELECT TOP (" + Math.max(1, sampleSize) + ") * FROM ["
-                    + schema + "].[" + table + "] ORDER BY [" + pk + "]";
+                    + schema + "].[" + table + "] ORDER BY " + srcOrder;
             try (Statement st = sc.createStatement(); ResultSet rs = st.executeQuery(srcSql)) {
                 ResultSetMetaData md = rs.getMetaData();
                 for (int i = 1; i <= md.getColumnCount(); i++) srcCols.add(md.getColumnLabel(i));
                 while (rs.next()) {
-                    String key = ReconciliationLogic.normalizeKey(rs.getObject(pk));
+                    String key = compositeKeyFromRow(rs, pks);
                     if (key == null) continue;
                     Map<String, Object> row = new HashMap<>();
                     for (String c : srcCols) row.put(c, rs.getObject(c));
@@ -167,22 +172,27 @@ public class ReconciliationService {
             }
             Set<String> sample = srcRows.keySet();
 
-            // Fetch the matching target rows (PK cast to lower text to bridge the type conversion).
-            String tgtPk = TargetNaming.apply(pk, naming);          // plain name for ResultSet lookup
-            String tgtPkSql = qid(tgtEngine, tgtPk);                 // quoted for SQL (case-sensitive names)
+            // Fetch the matching target rows on the same composite key expression (each PK part cast to
+            // lower text and joined by chr(1), mirroring ReconciliationLogic.compositeKey).
+            List<String> tgtPks = pks.stream().map(c -> TargetNaming.apply(c, naming)).toList();
             Map<String, Map<String, Object>> tgtRows = new HashMap<>();
             Set<String> tgtCols = new HashSet<>();
             if (!sample.isEmpty()) {
+                // Soft-filter only tables that actually have the CDC marker (bulk tables don't) (#217, cf. #226).
+                boolean tableSoft = softDelete && hasColumn(tc, targetSchema, TargetNaming.apply(table, naming),
+                        TargetNaming.apply("__cdc_deleted", naming));
+                String tgtKeyExpr = String.join(" || chr(1) || ",
+                        tgtPks.stream().map(c -> "lower(cast(" + qid(tgtEngine, c) + " AS text))").toList());
                 String tgtSql = "SELECT * FROM " + qid(tgtEngine, targetSchema) + "." + qid(tgtEngine, TargetNaming.apply(table, naming))
-                        + " WHERE lower(cast(" + tgtPkSql + " AS text)) = ANY(?)"
-                        + (softDelete ? " AND " + qid(tgtEngine, TargetNaming.apply("__cdc_deleted", naming)) + " IS NOT TRUE" : "");
+                        + " WHERE " + tgtKeyExpr + " = ANY(?)"
+                        + (tableSoft ? " AND " + qid(tgtEngine, TargetNaming.apply("__cdc_deleted", naming)) + " IS NOT TRUE" : "");
                 try (PreparedStatement ps = tc.prepareStatement(tgtSql)) {
                     ps.setArray(1, tc.createArrayOf("text", sample.toArray()));
                     try (ResultSet rs = ps.executeQuery()) {
                         ResultSetMetaData md = rs.getMetaData();
                         for (int i = 1; i <= md.getColumnCount(); i++) tgtCols.add(md.getColumnLabel(i).toLowerCase());
                         while (rs.next()) {
-                            String key = ReconciliationLogic.normalizeKey(rs.getObject(tgtPk));
+                            String key = compositeKeyFromRow(rs, tgtPks);
                             if (key == null) continue;
                             Map<String, Object> row = new HashMap<>();
                             for (String c : tgtCols) row.put(c, rs.getObject(c));
@@ -193,8 +203,10 @@ public class ReconciliationService {
             }
 
             // Compare non-PK source columns whose target-named form exists on the target.
+            Set<String> pkLower = new HashSet<>();
+            for (String c : pks) pkLower.add(c.toLowerCase());
             List<String> compareCols = srcCols.stream()
-                    .filter(c -> !c.equalsIgnoreCase(pk))
+                    .filter(c -> !pkLower.contains(c.toLowerCase()))
                     .filter(c -> tgtCols.contains(TargetNaming.apply(c, naming).toLowerCase()))
                     .sorted()
                     .toList();
@@ -224,18 +236,39 @@ public class ReconciliationService {
         return r;
     }
 
-    private Optional<String> singlePrimaryKey(Connection sc, String schema, String table) throws SQLException {
-        List<String> pks = new ArrayList<>();
+    /** Primary-key column names in key order (KEY_SEQ); empty if the table has no PK. */
+    private List<String> primaryKeys(Connection sc, String schema, String table) throws SQLException {
+        java.util.TreeMap<Short, String> bySeq = new java.util.TreeMap<>();
         try (ResultSet rs = sc.getMetaData().getPrimaryKeys(sc.getCatalog(), schema, table)) {
-            while (rs.next()) pks.add(rs.getString("COLUMN_NAME"));
+            while (rs.next()) bySeq.put(rs.getShort("KEY_SEQ"), rs.getString("COLUMN_NAME"));
         }
-        return pks.size() == 1 ? Optional.of(pks.get(0)) : Optional.empty();
+        return new ArrayList<>(bySeq.values());
+    }
+
+    /** Normalised composite key from a row's PK columns; null if any PK part is null (#217). */
+    private String compositeKeyFromRow(ResultSet rs, List<String> keyCols) throws SQLException {
+        List<Object> vals = new ArrayList<>(keyCols.size());
+        for (String c : keyCols) vals.add(rs.getObject(c));
+        return ReconciliationLogic.compositeKey(vals);
     }
 
     private long count(Connection conn, String sql) throws Exception {
         try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sql)) {
             return rs.next() ? rs.getLong(1) : 0L;
         }
+    }
+
+    /** Whether a target table has a column (case-insensitive), via JDBC metadata — tells a CDC-sink table
+     *  (has {@code __cdc_deleted}) from a bulk-copied one without a query that would error if it's absent. */
+    private boolean hasColumn(Connection tc, String schema, String table, String column) {
+        try (ResultSet rs = tc.getMetaData().getColumns(null, schema, table, null)) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("COLUMN_NAME"))) return true;
+            }
+        } catch (SQLException e) {
+            log.debug("Column probe failed for {}.{}.{}: {}", schema, table, column, e.getMessage());
+        }
+        return false;
     }
 
     /** Quote a target identifier for the target engine so case-sensitive names (PascalCase) match. */

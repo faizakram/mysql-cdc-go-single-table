@@ -11,8 +11,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Periodic drift-detection reconciliation (#49). Runs row-count validation for ACTIVE projects that
- * opted in (config.autoReconcile = true) and logs sustained drift (seeds alerting #52).
+ * Periodic drift-detection reconciliation (#49). Runs validation for ACTIVE projects that opted in and
+ * logs sustained drift (seeds alerting #52). Two opt-in levels:
+ * <ul>
+ *   <li>{@code config.onlineValidation = true} → CHECKSUM mode: samples rows and compares column content
+ *       during CDC, catching value drift that row counts miss (online in-flight validation, #217).</li>
+ *   <li>{@code config.autoReconcile = true} → COUNT mode: row-count drift only.</li>
+ * </ul>
  */
 @Component
 public class ReconciliationScheduler {
@@ -35,18 +40,21 @@ public class ReconciliationScheduler {
         // Only ACTIVE projects can have drift worth reconciling — query them directly instead of
         // scanning every project (#214).
         for (MigrationProject p : projects.findByStatus(ProjectStatus.ACTIVE)) {
-            if (!optedIn(p)) continue;
+            boolean online = flag(p, "onlineValidation");
+            if (!online && !flag(p, "autoReconcile")) continue;
+            String mode = online ? "CHECKSUM" : "COUNT";   // online = content comparison during CDC (#217)
             try {
-                RunDto run = reconciliation.run(p.getId(), "COUNT", 1000);
+                RunDto run = reconciliation.run(p.getId(), mode, 1000);
                 String dedup = "drift:" + p.getId();
                 if (run.mismatched() > 0) {
-                    log.warn("Drift detected for project '{}' ({}): {}/{} tables mismatched",
-                            p.getName(), p.getId(), run.mismatched(), run.totalTables());
+                    String kind = online ? "content/row drift" : "row-count drift";
+                    log.warn("{} detected for project '{}' ({}): {}/{} tables mismatched ({} mode)",
+                            kind, p.getName(), p.getId(), run.mismatched(), run.totalTables(), mode);
                     alerts.raise(dedup, "WARNING", "DRIFT",
-                            "Drift in project '" + p.getName() + "': " + run.mismatched() + "/"
+                            kind + " in project '" + p.getName() + "': " + run.mismatched() + "/"
                                     + run.totalTables() + " tables mismatched", p.getId());
                 } else {
-                    log.info("Scheduled reconciliation clean for project '{}' ({})", p.getName(), p.getId());
+                    log.info("Scheduled {} reconciliation clean for project '{}' ({})", mode, p.getName(), p.getId());
                     alerts.resolve(dedup);
                 }
             } catch (Exception e) {
@@ -55,8 +63,8 @@ public class ReconciliationScheduler {
         }
     }
 
-    private boolean optedIn(MigrationProject p) {
-        Object v = p.getConfig() == null ? null : p.getConfig().get("autoReconcile");
+    private boolean flag(MigrationProject p, String key) {
+        Object v = p.getConfig() == null ? null : p.getConfig().get(key);
         return (v instanceof Boolean b && b) || "true".equalsIgnoreCase(String.valueOf(v));
     }
 }
