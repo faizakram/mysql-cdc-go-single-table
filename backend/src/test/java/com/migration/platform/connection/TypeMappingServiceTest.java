@@ -46,6 +46,18 @@ class TypeMappingServiceTest {
     }
 
     @Test
+    void decimalKeepsPrecisionAndScale() {
+        // #197: SQL Server DECIMAL/NUMERIC(p,s) → PostgreSQL NUMERIC(p,s) — scale must survive so values
+        // don't round (e.g. 10.50 staying 10.50, not 11).
+        var d = svc.propose(new ColumnInfo("amount", "decimal", 12, 2, true, false));
+        assertThat(d.proposedType()).isEqualTo("NUMERIC(12, 2)");
+        assertThat(d.scale()).isEqualTo(2);
+        // Unknown precision falls back to a bare type rather than an invalid NUMERIC(0,0).
+        assertThat(svc.propose(new ColumnInfo("n", "numeric", 0, 0, true, false)).proposedType())
+                .isEqualTo("NUMERIC");
+    }
+
+    @Test
     void varcharKeepsLengthButFallsBackToTextWhenHuge() {
         assertThat(map("varchar", 50, "name").proposedType()).isEqualTo("VARCHAR(50)");
         assertThat(map("nvarchar", -1, "blob").proposedType()).isEqualTo("TEXT");      // MAX

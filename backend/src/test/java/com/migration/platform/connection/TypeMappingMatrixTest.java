@@ -34,6 +34,25 @@ class TypeMappingMatrixTest {
     }
 
     @Test
+    void decimalPreservesPrecisionAndScaleAcrossEngines() {
+        // #197: a NUMERIC(12,2) must not collapse to a bare type (scale 0) and round values.
+        assertThat(TypeMappingMatrix.map(DbType.POSTGRESQL, DbType.MYSQL, "numeric", 12, 2).targetType())
+                .isEqualTo("DECIMAL(12, 2)");
+        assertThat(TypeMappingMatrix.map(DbType.MYSQL, DbType.POSTGRESQL, "decimal", 10, 4).targetType())
+                .isEqualTo("NUMERIC(10, 4)");
+        assertThat(TypeMappingMatrix.map(DbType.SQLSERVER, DbType.ORACLE, "decimal", 18, 6).targetType())
+                .isEqualTo("NUMBER(18, 6)");
+        // Homogeneous decimal also keeps (p,s).
+        assertThat(TypeMappingMatrix.map(DbType.POSTGRESQL, DbType.POSTGRESQL, "numeric", 9, 3).targetType())
+                .isEqualTo("NUMERIC(9, 3)");
+        // Scale 0 (integers-as-decimal) renders DECIMAL(p, 0); unknown precision stays bare.
+        assertThat(TypeMappingMatrix.map(DbType.ORACLE, DbType.POSTGRESQL, "number", 8, 0).targetType())
+                .isEqualTo("NUMERIC(8, 0)");
+        assertThat(TypeMappingMatrix.map(DbType.ORACLE, DbType.POSTGRESQL, "number", 0, 0).targetType())
+                .isEqualTo("NUMERIC");
+    }
+
+    @Test
     void unmappableTypeIsFlaggedNotSilent() {
         TypeMappingMatrix.Mapped m = TypeMappingMatrix.map(DbType.ORACLE, DbType.POSTGRESQL, "sdo_geometry", 0);
         assertThat(m.targetType()).isEqualTo("TEXT");

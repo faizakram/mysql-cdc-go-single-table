@@ -84,16 +84,16 @@ public class TypeMappingService {
     public ColumnMapping propose(ColumnInfo c, Map<String, String> overrides, DbType srcEngine, DbType tgtEngine) {
         String src = c.dataType() == null ? "" : c.dataType().toLowerCase();
         if (overrides != null && overrides.containsKey(src)) {
-            return new ColumnMapping(c.name(), c.dataType(), c.size(), c.nullable(), c.primaryKey(),
+            return new ColumnMapping(c.name(), c.dataType(), c.size(), c.scale(), c.nullable(), c.primaryKey(),
                     overrides.get(src), detectSemantic(src, c.name()), null);
         }
         if (srcEngine == DbType.SQLSERVER && tgtEngine == DbType.POSTGRESQL) {
-            String pg = mapType(src, c.size(), overrides);
-            return new ColumnMapping(c.name(), c.dataType(), c.size(), c.nullable(), c.primaryKey(),
+            String pg = mapType(src, c.size(), c.scale(), overrides);
+            return new ColumnMapping(c.name(), c.dataType(), c.size(), c.scale(), c.nullable(), c.primaryKey(),
                     pg, detectSemantic(src, c.name()), TYPE_NOTES.get(src));
         }
-        TypeMappingMatrix.Mapped m = TypeMappingMatrix.map(srcEngine, tgtEngine, c.dataType(), c.size());
-        return new ColumnMapping(c.name(), c.dataType(), c.size(), c.nullable(), c.primaryKey(),
+        TypeMappingMatrix.Mapped m = TypeMappingMatrix.map(srcEngine, tgtEngine, c.dataType(), c.size(), c.scale());
+        return new ColumnMapping(c.name(), c.dataType(), c.size(), c.scale(), c.nullable(), c.primaryKey(),
                 m.targetType(), detectSemantic(src, c.name()), m.note());
     }
 
@@ -106,12 +106,13 @@ public class TypeMappingService {
                 .orElse(DbType.POSTGRESQL);
     }
 
-    private String mapType(String src, int size, Map<String, String> overrides) {
+    private String mapType(String src, int size, int scale, Map<String, String> overrides) {
         if (overrides != null && overrides.containsKey(src)) {
             return overrides.get(src);   // per-project rule wins, verbatim
         }
         return switch (src) {
-            case "decimal", "numeric" -> "NUMERIC";
+            // Preserve precision/scale so a NUMERIC(12,2) doesn't collapse to scale 0 and round (#197).
+            case "decimal", "numeric" -> size > 0 ? "NUMERIC(" + size + ", " + Math.max(0, scale) + ")" : "NUMERIC";
             case "char", "nchar" -> sizedOrText("CHAR", size);
             case "varchar", "nvarchar" -> sizedOrText("VARCHAR", size);
             default -> DEFAULT_TYPES.getOrDefault(src, "TEXT");

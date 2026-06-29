@@ -80,10 +80,15 @@ public class SchemaDiscoveryService {
             try (ResultSet rs = md.getColumns(catalog, schema, table, "%")) {
                 while (rs.next()) {
                     String name = rs.getString("COLUMN_NAME");
+                    // DECIMAL_DIGITS is the scale (digits after the point) for numeric types; capture it so
+                    // DECIMAL/NUMERIC target DDL keeps (precision, scale) instead of defaulting to scale 0 (#197).
+                    int scale = rs.getInt("DECIMAL_DIGITS");
+                    if (rs.wasNull()) scale = 0;
                     out.add(new ColumnInfo(
                             name,
                             rs.getString("TYPE_NAME"),
                             rs.getInt("COLUMN_SIZE"),
+                            scale,
                             rs.getInt("NULLABLE") == DatabaseMetaData.columnNullable,
                             pks.contains(name)));
                 }

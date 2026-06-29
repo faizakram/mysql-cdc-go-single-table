@@ -20,8 +20,13 @@ public final class TypeMappingMatrix {
 
     public record Mapped(String targetType, String note) {}
 
-    /** Map a source column type to the target engine's type. */
+    /** Map a source column type to the target engine's type (scale unknown — defaults to 0). */
     public static Mapped map(DbType source, DbType target, String sourceType, int size) {
+        return map(source, target, sourceType, size, 0);
+    }
+
+    /** Map a source column type to the target engine's type, preserving DECIMAL/NUMERIC scale (#197). */
+    public static Mapped map(DbType source, DbType target, String sourceType, int size, int scale) {
         String src = sourceType == null ? "" : sourceType.trim().toLowerCase();
         // Normalize so the base type categorizes cleanly regardless of how a driver decorates it:
         //  - drop precision/length parens: numeric(10,2) -> numeric, timestamp(6) -> timestamp
@@ -29,16 +34,26 @@ public final class TypeMappingMatrix {
         src = src.replaceAll("\\s*\\([^)]*\\)", "")
                  .replace(" identity", "").replace(" unsigned", "").replace(" zerofill", "")
                  .trim();
-        if (source == target) {
-            // Homogeneous fast-path: keep the source type verbatim (preserving size where given).
-            return new Mapped(sized(sourceType == null ? "TEXT" : sourceType.toUpperCase(), size, src), null);
-        }
         Cat cat = canonical(source, src);
-        String rendered = render(target, cat, size);
+        if (source == target) {
+            // Homogeneous fast-path: keep the source type verbatim (preserving size/scale where given).
+            String base = sourceType == null ? "TEXT" : sourceType.toUpperCase();
+            if (cat == Cat.DECIMAL && size > 0) {
+                String bare = base.replaceAll("\\s*\\([^)]*\\)", "");   // re-render a clean (p,s)
+                return new Mapped(bare + decimalSuffix(size, scale), null);
+            }
+            return new Mapped(sized(base, size, src), null);
+        }
+        String rendered = render(target, cat, size, scale);
         String note = cat == Cat.UNKNOWN
                 ? "No canonical mapping for '" + sourceType + "' (" + source + "→" + target + "); defaulted — review."
                 : null;
         return new Mapped(rendered, note);
+    }
+
+    /** {@code (precision, scale)} suffix for a DECIMAL/NUMERIC/NUMBER target type. */
+    private static String decimalSuffix(int precision, int scale) {
+        return "(" + precision + ", " + Math.max(0, scale) + ")";
     }
 
     private static String sized(String base, int size, String srcLower) {
@@ -168,7 +183,13 @@ public final class TypeMappingMatrix {
         };
     }
 
-    private static String render(DbType target, Cat cat, int size) {
+    /** Target type for a category, applying DECIMAL/NUMERIC (precision, scale) when known (#197). */
+    private static String render(DbType target, Cat cat, int size, int scale) {
+        String base = baseType(target, cat, size);
+        return (cat == Cat.DECIMAL && size > 0) ? base + decimalSuffix(size, scale) : base;
+    }
+
+    private static String baseType(DbType target, Cat cat, int size) {
         return switch (target) {
             case POSTGRESQL -> Map.ofEntries(
                     e(Cat.INT16, "SMALLINT"), e(Cat.INT32, "INTEGER"), e(Cat.INT64, "BIGINT"),
